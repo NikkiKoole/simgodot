@@ -170,7 +170,6 @@ func _follow_path(speed_mult: float) -> void:
 	var avoidance := _calculate_avoidance()
 	if stuck_timer > stuck_threshold:
 		avoidance = Vector2.ZERO  # No avoidance when stuck
-		print("[NPC ", npc_id, "] STUCK! timer=", stuck_timer, " radius=", current_collision_radius)
 
 	# Check if stuck (not making meaningful progress toward goal)
 	var progress_toward_goal := last_position.distance_to(target_pos) - global_position.distance_to(target_pos)
@@ -303,6 +302,10 @@ func _find_best_object_for_needs() -> InteractableObject:
 	return best_object
 
 func _pathfind_to_object(obj: InteractableObject) -> void:
+	# Stop using current object if we were using one
+	if current_state == State.USING_OBJECT:
+		_stop_using_object()
+
 	# Cancel any existing reservation first
 	_cancel_current_reservation()
 
@@ -407,11 +410,24 @@ func _use_object(delta: float, game_delta: float) -> void:
 		var rate: float = target_object.get_fulfillment_rate(motive_type)
 		motives.fulfill(motive_type, rate * game_delta)
 
-	# Object use timer runs on real time
-	object_use_timer -= delta
+	# Object use timer runs on game time
+	object_use_timer -= game_delta
 	if object_use_timer <= 0.0:
 		print("[NPC ", npc_id, "] Timer done, stopping use")
 		_stop_using_object()
+	# Also stop early if the motive is fully satisfied
+	elif _is_motive_satisfied():
+		print("[NPC ", npc_id, "] Motive satisfied, stopping early")
+		_stop_using_object()
+
+func _is_motive_satisfied() -> bool:
+	if target_object == null:
+		return true
+	# Check if all motives this object fulfills are above 90%
+	for motive_type in target_object.advertisements:
+		if motives.get_value(motive_type) < 90.0:
+			return false
+	return true
 
 func _stop_using_object() -> void:
 	if target_object != null:
