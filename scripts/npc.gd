@@ -9,12 +9,23 @@ const TILE_SIZE := 32
 ## Maximum wait time at destination (seconds)
 @export var max_wait_time: float = 4.0
 
+## Steering/Avoidance settings
+@export var avoidance_radius: float = 40.0  # How far to look for others
+@export var avoidance_strength: float = 60.0  # How hard to steer away
+@export var stuck_threshold: float = 0.3  # Seconds without progress before wiggling
+@export var wiggle_strength: float = 40.0  # Random force when stuck
+
 enum State { IDLE, WALKING, WAITING, USING_OBJECT }
 var current_state: State = State.IDLE
 var wait_timer: float = 0.0
 var is_initialized: bool = false
 var npc_id: int = 0
 static var npc_counter: int = 0
+
+# Stuck detection
+var last_position: Vector2 = Vector2.ZERO
+var stuck_timer: float = 0.0
+var wiggle_direction: Vector2 = Vector2.ZERO
 
 # Motive system
 var motives: Motive
@@ -95,24 +106,88 @@ func _follow_path(speed_mult: float) -> void:
 			_start_using_object()
 		else:
 			_start_waiting()
+		stuck_timer = 0.0
 		return
 
 	var target_pos := current_path[path_index]
 	var distance := global_position.distance_to(target_pos)
+	var delta := get_physics_process_delta_time()
 
 	# Calculate how far we'd move this frame
-	var move_distance := speed * speed_mult * get_physics_process_delta_time()
+	var move_distance := speed * speed_mult * delta
 
 	# If we're close enough (or would overshoot), snap to waypoint and move to next
 	if distance <= move_distance + 2.0:
 		# Snap to waypoint and move to next
 		global_position = target_pos
 		path_index += 1
+		stuck_timer = 0.0
 		return
 
-	var direction := global_position.direction_to(target_pos)
-	velocity = direction * speed * speed_mult
+	# Calculate desired direction to target
+	var desired_direction := global_position.direction_to(target_pos)
+
+	# Get avoidance force from nearby entities
+	var avoidance := _calculate_avoidance()
+
+	# Check if stuck (not making progress)
+	var moved_distance := global_position.distance_to(last_position)
+	if moved_distance < 1.0 * speed_mult * delta:
+		stuck_timer += delta
+	else:
+		stuck_timer = 0.0
+		wiggle_direction = Vector2.ZERO
+	last_position = global_position
+
+	# If stuck, add wiggle force
+	var wiggle := Vector2.ZERO
+	if stuck_timer > stuck_threshold:
+		if wiggle_direction == Vector2.ZERO:
+			# Pick a random perpendicular direction to wiggle
+			wiggle_direction = Vector2(randf_range(-1, 1), randf_range(-1, 1)).normalized()
+		wiggle = wiggle_direction * wiggle_strength
+
+	# Combine forces: desired movement + avoidance + wiggle
+	var final_velocity := desired_direction * speed + avoidance * avoidance_strength + wiggle
+
+	# Apply speed multiplier and clamp
+	final_velocity *= speed_mult
+	var max_speed := speed * speed_mult * 1.3  # Allow slight overspeed when avoiding
+	if final_velocity.length() > max_speed:
+		final_velocity = final_velocity.normalized() * max_speed
+
+	velocity = final_velocity
 	move_and_slide()
+
+func _calculate_avoidance() -> Vector2:
+	var avoidance := Vector2.ZERO
+
+	# Find nearby bodies using physics query
+	var space_state := get_world_2d().direct_space_state
+	var query := PhysicsShapeQueryParameters2D.new()
+	var circle := CircleShape2D.new()
+	circle.radius = avoidance_radius
+	query.shape = circle
+	query.transform = Transform2D(0, global_position)
+	query.collision_mask = 6  # Layer 2 (NPCs) + Layer 4 (Player)
+	query.exclude = [get_rid()]
+
+	var results := space_state.intersect_shape(query, 10)
+
+	for result in results:
+		var other: Node2D = result.collider
+		if other == self:
+			continue
+
+		var to_self := global_position - other.global_position
+		var dist := to_self.length()
+
+		if dist > 0 and dist < avoidance_radius:
+			# Stronger avoidance when closer (inverse square falloff)
+			var strength := pow(1.0 - (dist / avoidance_radius), 2)
+			avoidance += to_self.normalized() * strength
+
+	return avoidance
 
 func _decide_next_action() -> void:
 	# Check if we have critical motives that need addressing
