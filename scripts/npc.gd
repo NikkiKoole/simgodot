@@ -61,10 +61,14 @@ func _physics_process(delta: float) -> void:
 	if not is_initialized:
 		return
 
-	# Calculate game time delta for motive updates
-	var game_delta := delta
+	# Get speed multiplier and scaled deltas from game clock
+	var speed_mult := 1.0
+	var game_delta := delta  # For motive updates (in game minutes)
+	var scaled_delta := delta  # For timers (scaled by speed)
 	if game_clock != null:
+		speed_mult = game_clock.speed_multiplier if not game_clock.is_paused else 0.0
 		game_delta = game_clock.get_game_delta(delta)
+		scaled_delta = game_clock.get_scaled_delta(delta)
 
 	# Update motives using game time
 	motives.update(game_delta)
@@ -74,17 +78,17 @@ func _physics_process(delta: float) -> void:
 			_decide_next_action()
 
 		State.WALKING:
-			_follow_path(delta)
+			_follow_path(speed_mult)
 
 		State.WAITING:
-			wait_timer -= delta
+			wait_timer -= scaled_delta
 			if wait_timer <= 0.0:
 				current_state = State.IDLE
 
 		State.USING_OBJECT:
-			_use_object(delta, game_delta)
+			_use_object(scaled_delta, game_delta)
 
-func _follow_path(_delta: float) -> void:
+func _follow_path(speed_mult: float) -> void:
 	if path_index >= current_path.size():
 		# Reached end of path
 		if target_object != null:
@@ -94,15 +98,20 @@ func _follow_path(_delta: float) -> void:
 		return
 
 	var target_pos := current_path[path_index]
-	var direction := global_position.direction_to(target_pos)
 	var distance := global_position.distance_to(target_pos)
 
-	if distance < 4.0:
-		# Reached this waypoint, move to next
+	# Calculate how far we'd move this frame
+	var move_distance := speed * speed_mult * get_physics_process_delta_time()
+
+	# If we're close enough (or would overshoot), snap to waypoint and move to next
+	if distance <= move_distance + 2.0:
+		# Snap to waypoint and move to next
+		global_position = target_pos
 		path_index += 1
 		return
 
-	velocity = direction * speed
+	var direction := global_position.direction_to(target_pos)
+	velocity = direction * speed * speed_mult
 	move_and_slide()
 
 func _decide_next_action() -> void:

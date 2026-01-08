@@ -8,9 +8,6 @@ var time_label: Label
 var day_label: Label
 var speed_label: Label
 
-const SPEEDS := [0.5, 1.0, 2.0, 5.0, 10.0]
-var current_speed_index: int = 1  # Start at 1.0x
-
 func _ready() -> void:
 	# Create UI container
 	var panel := PanelContainer.new()
@@ -34,7 +31,7 @@ func _ready() -> void:
 
 	# Speed label
 	speed_label = Label.new()
-	speed_label.text = "Speed: 1.0x"
+	speed_label.text = "Speed: 1x"
 	speed_label.add_theme_font_size_override("font_size", 14)
 	vbox.add_child(speed_label)
 
@@ -62,16 +59,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 
 	if event.is_action_pressed("ui_pause") or (event is InputEventKey and event.pressed and event.keycode == KEY_P):
-		game_clock.set_paused(not game_clock.is_paused)
+		game_clock.toggle_pause()
 
 	# Speed up with + or =
 	if event is InputEventKey and event.pressed:
 		if event.keycode == KEY_EQUAL or event.keycode == KEY_KP_ADD:
-			current_speed_index = mini(current_speed_index + 1, SPEEDS.size() - 1)
-			game_clock.set_speed(SPEEDS[current_speed_index])
+			game_clock.speed_up()
 		elif event.keycode == KEY_MINUS or event.keycode == KEY_KP_SUBTRACT:
-			current_speed_index = maxi(current_speed_index - 1, 0)
-			game_clock.set_speed(SPEEDS[current_speed_index])
+			game_clock.slow_down()
 
 func set_game_clock(clock: GameClock) -> void:
 	game_clock = clock

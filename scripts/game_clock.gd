@@ -1,17 +1,20 @@
 class_name GameClock
 extends Node
 
-## Game clock system - controls the flow of time in the game
-## Inspired by The Sims where time moves in ~2 minute increments
+## Game clock system using ticks
+## 1 tick = 1 game minute
+## At 1x speed: 1 tick = 1 real second (24-hour day = 24 real minutes)
 
 signal minute_passed(hour: int, minute: int)
 signal hour_passed(hour: int)
 signal day_passed(day: int)
 
-## How many real seconds = 1 game minute
-## Default: 1 real second = 1 game minute (so 1 real minute = 1 game hour)
-## Set lower for faster time, higher for slower
-@export var real_seconds_per_game_minute: float = 1.0
+## Base tick duration in real seconds (at 1x speed)
+const BASE_SECONDS_PER_TICK := 1.0
+
+## Available speed levels
+const SPEED_LEVELS := [1, 2, 4, 8]
+var speed_index: int = 0
 
 ## Current game time
 var day: int = 1
@@ -24,21 +27,25 @@ var time_accumulator: float = 0.0
 ## Pause state
 var is_paused: bool = false
 
-## Speed multiplier (for fast-forward)
-var speed_multiplier: float = 1.0
+## Current speed multiplier (1, 2, 4, or 8)
+var speed_multiplier: int:
+	get:
+		return SPEED_LEVELS[speed_index]
 
 func _ready() -> void:
-	print("[GameClock] Started at Day ", day, ", ", _format_time())
+	print("[GameClock] Started at Day ", day, ", ", _format_time(), " (1 tick = 1 game minute)")
 
 func _process(delta: float) -> void:
 	if is_paused:
 		return
 
+	# At higher speeds, ticks happen faster
+	# 1x: 1 tick per second, 2x: 2 ticks per second, etc.
 	time_accumulator += delta * speed_multiplier
 
-	# Check if a game minute has passed
-	while time_accumulator >= real_seconds_per_game_minute:
-		time_accumulator -= real_seconds_per_game_minute
+	# Check if a tick (game minute) has passed
+	while time_accumulator >= BASE_SECONDS_PER_TICK:
+		time_accumulator -= BASE_SECONDS_PER_TICK
 		_advance_minute()
 
 func _advance_minute() -> void:
@@ -88,16 +95,25 @@ func get_time_string_12h() -> String:
 func _format_time() -> String:
 	return "%02d:%02d" % [hour, minute]
 
-## Set the time speed
-## 1.0 = normal, 2.0 = double speed, 0.5 = half speed
-func set_speed(multiplier: float) -> void:
-	speed_multiplier = maxf(0.0, multiplier)
-	print("[GameClock] Speed set to ", speed_multiplier, "x")
+## Increase speed to next level
+func speed_up() -> void:
+	if speed_index < SPEED_LEVELS.size() - 1:
+		speed_index += 1
+		print("[GameClock] Speed: ", speed_multiplier, "x")
+
+## Decrease speed to previous level
+func slow_down() -> void:
+	if speed_index > 0:
+		speed_index -= 1
+		print("[GameClock] Speed: ", speed_multiplier, "x")
 
 ## Pause/unpause the clock
 func set_paused(paused: bool) -> void:
 	is_paused = paused
 	print("[GameClock] ", "Paused" if paused else "Resumed")
+
+func toggle_pause() -> void:
+	set_paused(not is_paused)
 
 ## Set time directly
 func set_time(new_hour: int, new_minute: int = 0) -> void:
@@ -105,10 +121,16 @@ func set_time(new_hour: int, new_minute: int = 0) -> void:
 	minute = clampi(new_minute, 0, 59)
 	print("[GameClock] Time set to ", _format_time())
 
-## Get delta time scaled by game speed (for motive updates)
+## Get delta scaled by game speed (for simulation: movement, timers, etc.)
+func get_scaled_delta(real_delta: float) -> float:
+	if is_paused:
+		return 0.0
+	return real_delta * speed_multiplier
+
+## Get game minutes delta (for motive updates)
+## At 1x: 1 real second = 1 game minute
+## At 2x: 1 real second = 2 game minutes
 func get_game_delta(real_delta: float) -> float:
 	if is_paused:
 		return 0.0
-	# Convert real delta to game minutes
-	# If 1 real second = 1 game minute, then real_delta seconds = real_delta game minutes
-	return (real_delta / real_seconds_per_game_minute) * speed_multiplier
+	return real_delta * speed_multiplier
