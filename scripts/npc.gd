@@ -27,6 +27,17 @@ var last_position: Vector2 = Vector2.ZERO
 var stuck_timer: float = 0.0
 var wiggle_direction: Vector2 = Vector2.ZERO
 
+# Dynamic collision shrinking when stuck
+const DEFAULT_COLLISION_RADIUS: float = 8.0
+const MIN_COLLISION_RADIUS: float = 2.0
+const SHRINK_RATE: float = 2.0  # Radius shrink per second when stuck
+const GROW_RATE: float = 4.0   # Radius grow per second when moving
+var current_collision_radius: float = DEFAULT_COLLISION_RADIUS
+var collision_shape: CollisionShape2D
+
+# External push velocity (from player bumping)
+var push_velocity: Vector2 = Vector2.ZERO
+
 # Motive system
 var motives: Motive
 
@@ -49,6 +60,9 @@ func _ready() -> void:
 	npc_id = npc_counter
 	npc_counter += 1
 
+	# Get reference to collision shape for dynamic resizing
+	collision_shape = $CollisionShape2D
+
 	# Initialize motive system
 	motives = Motive.new("NPC " + str(npc_id))
 	motives.motive_depleted.connect(_on_motive_depleted)
@@ -61,6 +75,22 @@ func _ready() -> void:
 
 	print("[NPC ", npc_id, "] _ready called, position: ", global_position)
 
+	# Enable drawing and trigger initial draw
+	set_notify_transform(true)
+	queue_redraw()
+
+	# Initialize if astar was already set
+	_initialize_if_ready()
+
+func _draw() -> void:
+	# Draw collision circle outline for debugging
+	var color := Color(0, 1, 0, 1.0)  # Bright green
+	if stuck_timer > stuck_threshold:
+		color = Color(1, 0, 1, 1.0)  # Bright magenta when stuck
+	# Draw as arc (full circle outline) with 2px width
+	draw_arc(Vector2.ZERO, current_collision_radius, 0, TAU, 32, color, 2.0)
+
+func _initialize_if_ready() -> void:
 	# Initialize if astar was set before _ready
 	if astar != null and not walkable_positions.is_empty() and not is_initialized:
 		is_initialized = true
@@ -81,8 +111,26 @@ func _physics_process(delta: float) -> void:
 		game_delta = game_clock.get_game_delta(delta)
 		scaled_delta = game_clock.get_scaled_delta(delta)
 
+	# Handle push velocity from player
+	if push_velocity.length() > 0:
+		velocity = push_velocity
+		move_and_slide()
+		push_velocity = push_velocity.move_toward(Vector2.ZERO, 200.0 * delta)
+
 	# Update motives using game time
 	motives.update(game_delta)
+
+	# Dynamic collision shrinking/growing based on stuck state
+	if current_state == State.WALKING:
+		if stuck_timer > stuck_threshold:
+			# Shrink collision when stuck
+			_update_collision_radius(current_collision_radius - SHRINK_RATE * delta)
+		elif current_collision_radius < DEFAULT_COLLISION_RADIUS:
+			# Grow back when moving normally
+			_update_collision_radius(current_collision_radius + GROW_RATE * delta)
+
+	# Always redraw debug circle
+	queue_redraw()
 
 	match current_state:
 		State.IDLE:
@@ -422,3 +470,14 @@ func on_object_in_range(_obj: InteractableObject) -> void:
 func on_object_out_of_range(_obj: InteractableObject) -> void:
 	# NPCs know about all objects globally, no need to track by range
 	pass
+
+# Called by player when bumping into this NPC
+func receive_push(push: Vector2) -> void:
+	push_velocity = push
+
+# Update the collision shape radius
+func _update_collision_radius(new_radius: float) -> void:
+	current_collision_radius = clamp(new_radius, MIN_COLLISION_RADIUS, DEFAULT_COLLISION_RADIUS)
+	if collision_shape and collision_shape.shape is CircleShape2D:
+		collision_shape.shape.radius = current_collision_radius
+	queue_redraw()

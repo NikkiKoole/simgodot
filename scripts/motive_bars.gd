@@ -14,6 +14,7 @@ const MOTIVE_COLORS := {
 	Motive.MotiveType.ENERGY: Color(0.3, 0.7, 0.9),   # Light blue
 	Motive.MotiveType.BLADDER: Color(0.9, 0.85, 0.3), # Yellow
 	Motive.MotiveType.HYGIENE: Color(0.4, 0.8, 0.5),  # Green
+	Motive.MotiveType.FUN: Color(0.9, 0.4, 0.7),      # Pink/Magenta
 }
 
 const BACKGROUND_COLOR := Color(0.2, 0.2, 0.2, 0.8)

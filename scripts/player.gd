@@ -65,6 +65,14 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 
+	# Push NPCs when colliding with them
+	for i in get_slide_collision_count():
+		var collision := get_slide_collision(i)
+		var collider := collision.get_collider()
+		if collider is CharacterBody2D and collider.has_method("receive_push"):
+			var push_direction := collision.get_normal() * -1
+			collider.receive_push(push_direction * 50.0)
+
 func _start_using_nearest_object() -> void:
 	# Find the closest non-occupied object
 	var closest: InteractableObject = null

@@ -14,24 +14,27 @@ var bed_scene: PackedScene = preload("res://scenes/objects/bed.tscn")
 var fridge_scene: PackedScene = preload("res://scenes/objects/fridge.tscn")
 var toilet_scene: PackedScene = preload("res://scenes/objects/toilet.tscn")
 var shower_scene: PackedScene = preload("res://scenes/objects/shower.tscn")
+var tv_scene: PackedScene = preload("res://scenes/objects/tv.tscn")
+var computer_scene: PackedScene = preload("res://scenes/objects/computer.tscn")
+var bookshelf_scene: PackedScene = preload("res://scenes/objects/bookshelf.tscn")
 
 # ASCII map of the world - '#' = wall, ' ' = floor, 'P' = player start
-# Object markers: 'B' = bed, 'F' = fridge, 'T' = toilet, 'S' = shower
+# Object markers: B=bed, F=fridge, T=toilet, S=shower, V=tv, C=computer, K=bookshelf
 const WORLD_MAP := """
 #################
 #       #       #
 # B   B #   F   #
 #               #
-#            F  #
+#               #
 #       #       #
-###  ####    F  #
-#       #  ######
-#  P            #
+###  ####       #
+#       #########
+#  P        V   #
 #               #
 ###  #####      #
-#       #   T   #
+#   C   #   T   #
 #       #       #
-#       #   S   #
+#   K   #   S   #
 #       #       #
 #################
 """
@@ -107,6 +110,15 @@ func _parse_and_build_world() -> void:
 					walkable_positions.append(pos)
 				"S":
 					_spawn_object(shower_scene, pos)
+					walkable_positions.append(pos)
+				"V":
+					_spawn_object(tv_scene, pos)
+					walkable_positions.append(pos)
+				"C":
+					_spawn_object(computer_scene, pos)
+					walkable_positions.append(pos)
+				"K":
+					_spawn_object(bookshelf_scene, pos)
 					walkable_positions.append(pos)
 				" ":
 					walkable_positions.append(pos)

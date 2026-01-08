@@ -38,8 +38,8 @@ const DECAY_RATES_PER_MINUTE := {
 	MotiveType.ENERGY: 0.208,    # ~16 hours (a full day awake)
 	MotiveType.BLADDER: 0.556,   # ~6 hours
 	MotiveType.HYGIENE: 0.278,   # ~12 hours
+	MotiveType.FUN: 0.5,         # ~6.6 hours to go from 100 to -100
 	# Inactive motives - defined but set to 0 decay
-	MotiveType.FUN: 0.0,         # Would be ~0.667 (~5 hours)
 	MotiveType.SOCIAL: 0.0,      # Would be ~0.278 (~12 hours)
 	MotiveType.COMFORT: 0.0,     # Would be ~1.333 (~2.5 hours standing)
 	MotiveType.ROOM: 0.0         # Environment-based, not time-based
@@ -50,7 +50,8 @@ const ACTIVE_MOTIVES := [
 	MotiveType.HUNGER,
 	MotiveType.ENERGY,
 	MotiveType.BLADDER,
-	MotiveType.HYGIENE
+	MotiveType.HYGIENE,
+	MotiveType.FUN
 ]
 
 var values: Dictionary = {}
