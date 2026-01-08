@@ -197,14 +197,14 @@ func _follow_path(speed_mult: float) -> void:
 	var progress_toward_goal := last_position.distance_to(target_pos) - global_position.distance_to(target_pos)
 	var expected_progress := speed * speed_mult * delta * 0.3  # Need 30% of expected speed to count as progress
 	if progress_toward_goal < expected_progress:
-		stuck_timer += delta
+		stuck_timer += delta * speed_mult  # Scale with game speed
 	else:
 		# Only reset timer if making good progress, otherwise just reduce it slowly
 		if progress_toward_goal > expected_progress * 2:
 			stuck_timer = 0.0
 			wiggle_direction = Vector2.ZERO
 		else:
-			stuck_timer = maxf(0.0, stuck_timer - delta * 0.5)
+			stuck_timer = maxf(0.0, stuck_timer - delta * speed_mult * 0.5)  # Scale with game speed
 	last_position = global_position
 
 	# Dynamic collision shrinking/growing based on stuck state
@@ -215,11 +215,11 @@ func _follow_path(speed_mult: float) -> void:
 			wiggle_direction = Vector2.ZERO
 			current_state = State.IDLE  # Will pick new destination
 			return
-		# Shrink collision when stuck
-		_update_collision_radius(current_collision_radius - SHRINK_RATE * delta)
+		# Shrink collision when stuck (scale with game speed)
+		_update_collision_radius(current_collision_radius - SHRINK_RATE * delta * speed_mult)
 	elif current_collision_radius < DEFAULT_COLLISION_RADIUS:
-		# Grow back when moving normally
-		_update_collision_radius(current_collision_radius + GROW_RATE * delta)
+		# Grow back when moving normally (scale with game speed)
+		_update_collision_radius(current_collision_radius + GROW_RATE * delta * speed_mult)
 
 	# If stuck, add wiggle force
 	var wiggle := Vector2.ZERO
