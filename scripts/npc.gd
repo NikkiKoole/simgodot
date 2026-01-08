@@ -29,9 +29,9 @@ var wiggle_direction: Vector2 = Vector2.ZERO
 
 # Dynamic collision shrinking when stuck
 const DEFAULT_COLLISION_RADIUS: float = 8.0
-const MIN_COLLISION_RADIUS: float = 2.0
-const SHRINK_RATE: float = 2.0  # Radius shrink per second when stuck
-const GROW_RATE: float = 4.0   # Radius grow per second when moving
+const MIN_COLLISION_RADIUS: float = 1.0
+const SHRINK_RATE: float = 10.0  # Radius shrink per second when stuck (fast!)
+const GROW_RATE: float = 2.0    # Radius grow per second when moving (slow to recover)
 var current_collision_radius: float = DEFAULT_COLLISION_RADIUS
 var collision_shape: CollisionShape2D
 
@@ -120,15 +120,6 @@ func _physics_process(delta: float) -> void:
 	# Update motives using game time
 	motives.update(game_delta)
 
-	# Dynamic collision shrinking/growing based on stuck state
-	if current_state == State.WALKING:
-		if stuck_timer > stuck_threshold:
-			# Shrink collision when stuck
-			_update_collision_radius(current_collision_radius - SHRINK_RATE * delta)
-		elif current_collision_radius < DEFAULT_COLLISION_RADIUS:
-			# Grow back when moving normally
-			_update_collision_radius(current_collision_radius + GROW_RATE * delta)
-
 	# Always redraw debug circle
 	queue_redraw()
 
@@ -175,17 +166,33 @@ func _follow_path(speed_mult: float) -> void:
 	# Calculate desired direction to target
 	var desired_direction := global_position.direction_to(target_pos)
 
-	# Get avoidance force from nearby entities
+	# Get avoidance force from nearby entities (disabled when stuck to allow pushing through)
 	var avoidance := _calculate_avoidance()
+	if stuck_timer > stuck_threshold:
+		avoidance = Vector2.ZERO  # No avoidance when stuck
+		print("[NPC ", npc_id, "] STUCK! timer=", stuck_timer, " radius=", current_collision_radius)
 
-	# Check if stuck (not making progress)
-	var moved_distance := global_position.distance_to(last_position)
-	if moved_distance < 1.0 * speed_mult * delta:
+	# Check if stuck (not making meaningful progress toward goal)
+	var progress_toward_goal := last_position.distance_to(target_pos) - global_position.distance_to(target_pos)
+	var expected_progress := speed * speed_mult * delta * 0.3  # Need 30% of expected speed to count as progress
+	if progress_toward_goal < expected_progress:
 		stuck_timer += delta
 	else:
-		stuck_timer = 0.0
-		wiggle_direction = Vector2.ZERO
+		# Only reset timer if making good progress, otherwise just reduce it slowly
+		if progress_toward_goal > expected_progress * 2:
+			stuck_timer = 0.0
+			wiggle_direction = Vector2.ZERO
+		else:
+			stuck_timer = maxf(0.0, stuck_timer - delta * 0.5)
 	last_position = global_position
+
+	# Dynamic collision shrinking/growing based on stuck state
+	if stuck_timer > stuck_threshold:
+		# Shrink collision when stuck
+		_update_collision_radius(current_collision_radius - SHRINK_RATE * delta)
+	elif current_collision_radius < DEFAULT_COLLISION_RADIUS:
+		# Grow back when moving normally
+		_update_collision_radius(current_collision_radius + GROW_RATE * delta)
 
 	# If stuck, add wiggle force
 	var wiggle := Vector2.ZERO

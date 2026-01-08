@@ -5,7 +5,7 @@ const WALL_COLOR := Color(0.35, 0.35, 0.45)
 const FLOOR_COLOR := Color(0.15, 0.12, 0.1)
 
 ## Number of NPCs to spawn
-@export var npc_count: int = 7
+@export var npc_count: int = 14
 
 @onready var player: CharacterBody2D = $Player
 
