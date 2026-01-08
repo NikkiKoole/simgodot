@@ -5,7 +5,7 @@ const WALL_COLOR := Color(0.35, 0.35, 0.45)
 const FLOOR_COLOR := Color(0.15, 0.12, 0.1)
 
 ## Number of NPCs to spawn
-@export var npc_count: int = 14
+@export var npc_count: int = 64
 
 @onready var player: CharacterBody2D = $Player
 
@@ -68,6 +68,10 @@ func _ready() -> void:
 
 	# Give player reference to game clock
 	player.set_game_clock(game_clock)
+
+func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		get_tree().quit()
 
 func _parse_and_build_world() -> void:
 	var lines := WORLD_MAP.strip_edges().split("\n")

@@ -12,7 +12,7 @@ const TILE_SIZE := 32
 ## Steering/Avoidance settings
 @export var avoidance_radius: float = 40.0  # How far to look for others
 @export var avoidance_strength: float = 60.0  # How hard to steer away
-@export var stuck_threshold: float = 0.3  # Seconds without progress before wiggling
+@export var stuck_threshold: float = 1.0  # Seconds without progress before wiggling
 @export var wiggle_strength: float = 40.0  # Random force when stuck
 
 enum State { IDLE, WALKING, WAITING, USING_OBJECT }
@@ -209,6 +209,12 @@ func _follow_path(speed_mult: float) -> void:
 
 	# Dynamic collision shrinking/growing based on stuck state
 	if stuck_timer > stuck_threshold:
+		# Already at minimum collision and still stuck? Give up and find new route
+		if current_collision_radius <= MIN_COLLISION_RADIUS + 0.1:
+			stuck_timer = 0.0
+			wiggle_direction = Vector2.ZERO
+			current_state = State.IDLE  # Will pick new destination
+			return
 		# Shrink collision when stuck
 		_update_collision_radius(current_collision_radius - SHRINK_RATE * delta)
 	elif current_collision_radius < DEFAULT_COLLISION_RADIUS:
