@@ -13,7 +13,7 @@ signal day_passed(day: int)
 const BASE_SECONDS_PER_TICK := 1.0
 
 ## Available speed levels
-const SPEED_LEVELS := [1, 2, 4, 8]
+const SPEED_LEVELS := [1, 2, 4, 8, 16, 32, 64, 128, 256]
 var speed_index: int = 0
 
 ## Current game time

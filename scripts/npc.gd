@@ -114,7 +114,17 @@ func _physics_process(delta: float) -> void:
 	# Handle push velocity from player
 	if push_velocity.length() > 0:
 		velocity = push_velocity
-		move_and_slide()
+		# Subdivide push movement to prevent tunneling
+		var max_step := current_collision_radius * 0.25
+		var push_dist := velocity.length() * delta
+		if push_dist > max_step and velocity.length() > 0:
+			var substeps := ceili(push_dist / max_step)
+			var substep_vel := velocity / substeps
+			for i in substeps:
+				velocity = substep_vel
+				move_and_slide()
+		else:
+			move_and_slide()
 		push_velocity = push_velocity.move_toward(Vector2.ZERO, 200.0 * delta)
 
 	# Keep NPC within valid bounds (prevent clipping through walls)
@@ -150,6 +160,15 @@ func _follow_path(speed_mult: float) -> void:
 			_start_waiting()
 		stuck_timer = 0.0
 		return
+
+	# Dynamic look-ahead: periodically check if we can skip waypoints
+	# Use scaled delta so checks happen at consistent game-time intervals
+	if path_smoothing_enabled:
+		var delta := get_physics_process_delta_time() * speed_mult
+		lookahead_timer -= delta
+		if lookahead_timer <= 0.0:
+			lookahead_timer = dynamic_lookahead_interval
+			_try_skip_waypoints()
 
 	var target_pos := current_path[path_index]
 	var distance := global_position.distance_to(target_pos)
@@ -214,7 +233,26 @@ func _follow_path(speed_mult: float) -> void:
 		final_velocity = final_velocity.normalized() * max_speed
 
 	velocity = final_velocity
-	move_and_slide()
+
+	# Subdivide movement when moving fast to prevent tunneling through other bodies
+	# Max safe movement per step is roughly half the collision radius
+	var max_step_distance := current_collision_radius * 0.25
+	var frame_distance := velocity.length() * delta
+
+	if frame_distance > max_step_distance and velocity.length() > 0:
+		# Calculate how many substeps we need (no cap - let it scale with speed)
+		var substeps := ceili(frame_distance / max_step_distance)
+
+		if npc_id == 0:
+			print("[NPC 0 DEBUG] frame_dist=", snapped(frame_distance, 0.1), " max_step=", snapped(max_step_distance, 0.1), " substeps=", substeps, " collision_r=", snapped(current_collision_radius, 0.1))
+
+		# Reduce velocity for each substep
+		var substep_velocity := velocity / substeps
+		for i in substeps:
+			velocity = substep_velocity
+			move_and_slide()
+	else:
+		move_and_slide()
 
 func _calculate_avoidance() -> Vector2:
 	var avoidance := Vector2.ZERO
@@ -334,6 +372,14 @@ func _pathfind_to_object(obj: InteractableObject) -> void:
 
 	# Get path from AStar
 	current_path = astar.get_point_path(from_grid, to_grid)
+
+	# Pre-smooth the path to remove unnecessary waypoints
+	if path_smoothing_enabled and current_path.size() > 2:
+		var original_size := current_path.size()
+		current_path = _smooth_path(current_path)
+		if current_path.size() < original_size:
+			print("[NPC ", npc_id, "] Path smoothed: ", original_size, " -> ", current_path.size(), " waypoints")
+
 	path_index = 0
 
 	print("[NPC ", npc_id, "] Pathfinding to ", obj.get_object_name(), " for ", Motive.get_motive_name(motives.get_most_urgent_motive()))
@@ -379,6 +425,11 @@ func _pick_random_destination() -> void:
 
 	# Get path from AStar
 	current_path = astar.get_point_path(from_grid, to_grid)
+
+	# Pre-smooth the path to remove unnecessary waypoints
+	if path_smoothing_enabled and current_path.size() > 2:
+		current_path = _smooth_path(current_path)
+
 	path_index = 0
 
 	if current_path.size() > 0:
@@ -500,6 +551,54 @@ func on_object_out_of_range(_obj: InteractableObject) -> void:
 # Called by player when bumping into this NPC
 func receive_push(push: Vector2) -> void:
 	push_velocity = push
+
+# Path smoothing settings
+@export var path_smoothing_enabled: bool = true
+@export var dynamic_lookahead_interval: float = 0.2  # How often to check for shortcuts while walking
+var lookahead_timer: float = 0.0
+
+# Check if there's a clear line of sight between two points (no walls)
+func _has_line_of_sight(from: Vector2, to: Vector2) -> bool:
+	var space_state := get_world_2d().direct_space_state
+	var query := PhysicsRayQueryParameters2D.create(from, to)
+	query.collision_mask = 1  # Wall layer
+	var result := space_state.intersect_ray(query)
+	return result.is_empty()
+
+# Pre-smooth path by removing unnecessary waypoints
+func _smooth_path(path: PackedVector2Array) -> PackedVector2Array:
+	if path.size() <= 2:
+		return path
+
+	var smoothed: PackedVector2Array = []
+	smoothed.append(path[0])
+
+	var current_index := 0
+	while current_index < path.size() - 1:
+		# Look ahead as far as possible from current point
+		var furthest_visible := current_index + 1
+		# Check from the end backwards to find furthest visible point
+		for i in range(path.size() - 1, current_index + 1, -1):
+			if _has_line_of_sight(path[current_index], path[i]):
+				furthest_visible = i
+				break
+		smoothed.append(path[furthest_visible])
+		current_index = furthest_visible
+
+	return smoothed
+
+# Dynamic look-ahead: check if we can skip to a further waypoint while walking
+func _try_skip_waypoints() -> void:
+	if current_path.is_empty() or path_index >= current_path.size() - 1:
+		return
+
+	# Check from the end of the path backwards to find furthest visible point
+	for i in range(current_path.size() - 1, path_index, -1):
+		if _has_line_of_sight(global_position, current_path[i]):
+			if i > path_index:
+				#print("[NPC ", npc_id, "] Skipping from waypoint ", path_index, " to ", i)
+				path_index = i
+			break
 
 # Clamp NPC position to valid walkable area
 func _clamp_to_valid_position() -> void:
