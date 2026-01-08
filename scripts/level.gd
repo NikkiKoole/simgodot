@@ -99,8 +99,18 @@ var map_width: int = 0
 var map_height: int = 0
 var astar: AStarGrid2D
 var all_objects: Array[InteractableObject] = []
+var game_clock: GameClock
 
 func _ready() -> void:
+	# Create game clock
+	game_clock = GameClock.new()
+	add_child(game_clock)
+
+	# Create clock UI
+	var clock_ui := ClockUI.new()
+	clock_ui.set_game_clock(game_clock)
+	add_child(clock_ui)
+
 	# Create reusable collision shape
 	wall_shape = RectangleShape2D.new()
 	wall_shape.size = Vector2(TILE_SIZE, TILE_SIZE)
@@ -108,6 +118,9 @@ func _ready() -> void:
 	_parse_and_build_world()
 	_setup_astar()
 	_spawn_npcs()
+
+	# Give player reference to game clock
+	player.set_game_clock(game_clock)
 
 func _parse_and_build_world() -> void:
 	var lines := WORLD_MAP.strip_edges().split("\n")
@@ -221,6 +234,7 @@ func _spawn_npcs() -> void:
 		npc.set_walkable_positions(walkable_positions)
 		npc.set_astar(astar)
 		npc.set_available_objects(all_objects)
+		npc.set_game_clock(game_clock)
 
 		add_child(npc)
 

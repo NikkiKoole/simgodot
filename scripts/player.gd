@@ -9,6 +9,7 @@ extends CharacterBody2D
 
 # Motive system
 var motives: Motive
+var game_clock: GameClock
 
 # Object interaction
 var nearby_objects: Array[InteractableObject] = []
@@ -27,20 +28,16 @@ func _ready() -> void:
 	motive_bars.set_motives(motives)
 	add_child(motive_bars)
 
-	# Debug print motives every 10 seconds
-	var timer := Timer.new()
-	timer.wait_time = 10.0
-	timer.autostart = true
-	timer.timeout.connect(_debug_print_motives)
-	add_child(timer)
-
 func _physics_process(delta: float) -> void:
-	# Update motives
-	motives.update(delta)
+	# Update motives using game time
+	var game_delta := delta
+	if game_clock != null:
+		game_delta = game_clock.get_game_delta(delta)
+	motives.update(game_delta)
 
 	# Handle object interaction
 	if is_using_object:
-		_use_object(delta)
+		_use_object(delta, game_delta)
 		return
 
 	# Check for interaction input
@@ -89,21 +86,22 @@ func _start_using_nearest_object() -> void:
 
 	current_object = closest
 	is_using_object = true
-	object_use_timer = closest.use_duration
+	object_use_timer = closest.use_duration  # This is in game minutes
 	velocity = Vector2.ZERO
 	print("[Player] Started using ", closest.get_object_name())
 
-func _use_object(delta: float) -> void:
+func _use_object(real_delta: float, game_delta: float) -> void:
 	if current_object == null:
 		is_using_object = false
 		return
 
-	# Fulfill motives while using object
+	# Fulfill motives while using object (using game time)
 	for motive_type in current_object.advertisements:
 		var rate: float = current_object.get_fulfillment_rate(motive_type)
-		motives.fulfill(motive_type, rate * delta)
+		motives.fulfill(motive_type, rate * game_delta)
 
-	object_use_timer -= delta
+	# Timer counts down in game minutes
+	object_use_timer -= game_delta
 
 	# Allow canceling with movement or interaction
 	if Input.is_action_just_pressed("interact") or _has_movement_input():
@@ -138,8 +136,8 @@ func _get_object_hint(motive_type: Motive.MotiveType) -> String:
 		Motive.MotiveType.HYGIENE: return "shower"
 		_: return "object"
 
-func _debug_print_motives() -> void:
-	motives.debug_print()
+func set_game_clock(clock: GameClock) -> void:
+	game_clock = clock
 
 # For interaction with objects via collision
 func can_interact_with_object(_obj: InteractableObject) -> bool:

@@ -30,6 +30,9 @@ var available_objects: Array[InteractableObject] = []
 var target_object: InteractableObject = null
 var object_use_timer: float = 0.0
 
+# Game clock reference
+var game_clock: GameClock
+
 func _ready() -> void:
 	npc_id = npc_counter
 	npc_counter += 1
@@ -57,8 +60,13 @@ func _physics_process(delta: float) -> void:
 	if not is_initialized:
 		return
 
-	# Update motives
-	motives.update(delta)
+	# Calculate game time delta for motive updates
+	var game_delta := delta
+	if game_clock != null:
+		game_delta = game_clock.get_game_delta(delta)
+
+	# Update motives using game time
+	motives.update(game_delta)
 
 	match current_state:
 		State.IDLE:
@@ -73,7 +81,7 @@ func _physics_process(delta: float) -> void:
 				current_state = State.IDLE
 
 		State.USING_OBJECT:
-			_use_object(delta)
+			_use_object(delta, game_delta)
 
 func _follow_path(_delta: float) -> void:
 	if path_index >= current_path.size():
@@ -196,16 +204,17 @@ func _start_using_object() -> void:
 	current_state = State.USING_OBJECT
 	velocity = Vector2.ZERO
 
-func _use_object(delta: float) -> void:
+func _use_object(delta: float, game_delta: float) -> void:
 	if target_object == null:
 		current_state = State.IDLE
 		return
 
-	# Fulfill motives while using object
+	# Fulfill motives while using object (uses game time)
 	for motive_type in target_object.advertisements:
 		var rate: float = target_object.get_fulfillment_rate(motive_type)
-		motives.fulfill(motive_type, rate * delta)
+		motives.fulfill(motive_type, rate * game_delta)
 
+	# Object use timer runs on real time (actual animation/action duration)
 	object_use_timer -= delta
 	if object_use_timer <= 0.0:
 		_stop_using_object()
@@ -251,6 +260,9 @@ func set_walkable_positions(positions: Array[Vector2]) -> void:
 func set_astar(astar_ref: AStarGrid2D) -> void:
 	astar = astar_ref
 	print("[NPC ", npc_id, "] AStar set")
+
+func set_game_clock(clock: GameClock) -> void:
+	game_clock = clock
 
 # For interaction with objects via collision
 func can_interact_with_object(_obj: InteractableObject) -> bool:

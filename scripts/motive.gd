@@ -4,6 +4,7 @@ extends RefCounted
 ## Motive system inspired by The Sims
 ## Each motive ranges from -100 to +100
 ## Negative values indicate urgent need, positive values indicate satisfaction
+## Decay is calculated per GAME MINUTE, not real seconds
 
 signal value_changed(motive_type: MotiveType, new_value: float)
 signal critical_level(motive_type: MotiveType)  # Fired when value hits min
@@ -26,17 +27,21 @@ const MIN_VALUE := -100.0
 const MAX_VALUE := 100.0
 const CRITICAL_THRESHOLD := -50.0  # When motive becomes urgent
 
-## Decay rates per second (how fast each motive decreases)
-## Tuned so: Hunger ~4hrs, Energy ~16hrs, Bladder ~6hrs, Hygiene ~12hrs
-const DECAY_RATES := {
-	MotiveType.HUNGER: 0.014,    # ~4 hours to go from 100 to -100
-	MotiveType.ENERGY: 0.0035,   # ~16 hours (a full day awake)
-	MotiveType.BLADDER: 0.0093,  # ~6 hours
-	MotiveType.HYGIENE: 0.0046,  # ~12 hours
+## Decay rates per GAME MINUTE (how fast each motive decreases)
+## 200 points total range (-100 to +100)
+## Hunger: 200 points / 240 minutes (4 hours) = 0.833 per minute
+## Energy: 200 points / 960 minutes (16 hours) = 0.208 per minute
+## Bladder: 200 points / 360 minutes (6 hours) = 0.556 per minute
+## Hygiene: 200 points / 720 minutes (12 hours) = 0.278 per minute
+const DECAY_RATES_PER_MINUTE := {
+	MotiveType.HUNGER: 0.833,    # ~4 hours to go from 100 to -100
+	MotiveType.ENERGY: 0.208,    # ~16 hours (a full day awake)
+	MotiveType.BLADDER: 0.556,   # ~6 hours
+	MotiveType.HYGIENE: 0.278,   # ~12 hours
 	# Inactive motives - defined but set to 0 decay
-	MotiveType.FUN: 0.0,         # Would be ~0.011 (~5 hours)
-	MotiveType.SOCIAL: 0.0,      # Would be ~0.0046 (~12 hours)
-	MotiveType.COMFORT: 0.0,     # Would be ~0.023 (~2.5 hours standing)
+	MotiveType.FUN: 0.0,         # Would be ~0.667 (~5 hours)
+	MotiveType.SOCIAL: 0.0,      # Would be ~0.278 (~12 hours)
+	MotiveType.COMFORT: 0.0,     # Would be ~1.333 (~2.5 hours standing)
 	MotiveType.ROOM: 0.0         # Environment-based, not time-based
 }
 
@@ -57,12 +62,12 @@ func _init(entity_name: String = "Entity") -> void:
 	for motive_type in MotiveType.values():
 		values[motive_type] = 50.0  # Start at neutral-positive
 
-## Call this every frame with delta time
-func update(delta: float) -> void:
+## Call this every frame with game_minutes_delta (from GameClock.get_game_delta)
+func update(game_minutes_delta: float) -> void:
 	for motive_type in ACTIVE_MOTIVES:
-		var decay_rate: float = DECAY_RATES[motive_type]
+		var decay_rate: float = DECAY_RATES_PER_MINUTE[motive_type]
 		if decay_rate > 0:
-			_decay_motive(motive_type, decay_rate * delta)
+			_decay_motive(motive_type, decay_rate * game_minutes_delta)
 
 func _decay_motive(motive_type: MotiveType, amount: float) -> void:
 	var old_value: float = values[motive_type]
@@ -83,6 +88,7 @@ func _decay_motive(motive_type: MotiveType, amount: float) -> void:
 			print("[", owner_name, "] DEPLETED: ", get_motive_name(motive_type), " has hit rock bottom!")
 
 ## Increase a motive value (when fulfilled by an object)
+## amount is per game minute of use
 func fulfill(motive_type: MotiveType, amount: float) -> void:
 	var old_value: float = values[motive_type]
 	var new_value: float = clampf(old_value + amount, MIN_VALUE, MAX_VALUE)
@@ -90,7 +96,6 @@ func fulfill(motive_type: MotiveType, amount: float) -> void:
 	if new_value != old_value:
 		values[motive_type] = new_value
 		value_changed.emit(motive_type, new_value)
-		print("[", owner_name, "] ", get_motive_name(motive_type), ": ", snapped(old_value, 0.1), " -> ", snapped(new_value, 0.1))
 
 ## Get the current value of a motive
 func get_value(motive_type: MotiveType) -> float:
