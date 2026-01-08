@@ -81,7 +81,7 @@ func _parse_and_build_world() -> void:
 	floor_rect.color = FLOOR_COLOR
 	floor_rect.position = Vector2.ZERO
 	floor_rect.size = Vector2(map_width * TILE_SIZE, map_height * TILE_SIZE)
-	floor_rect.z_index = -1
+	floor_rect.z_index = -10
 	add_child(floor_rect)
 
 	# Parse the map

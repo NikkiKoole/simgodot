@@ -6,7 +6,7 @@ extends Control
 const BAR_WIDTH := 24
 const BAR_HEIGHT := 4
 const BAR_SPACING := 2
-const BAR_OFFSET := Vector2(-12, -40)  # Offset from entity center
+const BAR_OFFSET := Vector2(-12, -50)  # Offset from entity center
 
 # Colors for each motive type
 const MOTIVE_COLORS := {

@@ -24,5 +24,6 @@ func _process(delta: float) -> void:
 	if abs(offset.y) > dead_zone.y:
 		target_position.y = player_pos.y - sign(offset.y) * dead_zone.y
 
-	# Smoothly lerp camera to target position
-	global_position = global_position.lerp(target_position, lerp_speed * delta)
+	# Smoothly lerp camera to target position, then snap to whole pixels
+	var smooth_pos = global_position.lerp(target_position, lerp_speed * delta)
+	global_position = smooth_pos.round()

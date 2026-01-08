@@ -17,6 +17,8 @@ var current_object: InteractableObject = null
 var is_using_object: bool = false
 var object_use_timer: float = 0.0
 
+const COLLISION_RADIUS: float = 10.0
+
 func _ready() -> void:
 	# Initialize motive system
 	motives = Motive.new("Player")
@@ -28,7 +30,17 @@ func _ready() -> void:
 	motive_bars.set_motives(motives)
 	add_child(motive_bars)
 
+	# Enable drawing
+	set_notify_transform(true)
+	queue_redraw()
+
+func _draw() -> void:
+	# Draw collision circle outline
+	draw_arc(Vector2.ZERO, COLLISION_RADIUS, 0, TAU, 32, Color(0.2, 0.9, 0.4), 2.0)
+
 func _physics_process(delta: float) -> void:
+	queue_redraw()
+
 	# Update motives using game time
 	var game_delta := delta
 	if game_clock != null:
