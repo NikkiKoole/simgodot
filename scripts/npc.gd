@@ -73,7 +73,7 @@ func _ready() -> void:
 	motive_bars.set_motives(motives)
 	add_child(motive_bars)
 
-	print("[NPC ", npc_id, "] _ready called, position: ", global_position)
+
 
 	# Enable drawing and trigger initial draw
 	set_notify_transform(true)
@@ -243,8 +243,7 @@ func _follow_path(speed_mult: float) -> void:
 		# Calculate how many substeps we need (no cap - let it scale with speed)
 		var substeps := ceili(frame_distance / max_step_distance)
 
-		if npc_id == 0:
-			print("[NPC 0 DEBUG] frame_dist=", snapped(frame_distance, 0.1), " max_step=", snapped(max_step_distance, 0.1), " substeps=", substeps, " collision_r=", snapped(current_collision_radius, 0.1))
+
 
 		# Reduce velocity for each substep
 		var substep_velocity := velocity / substeps
@@ -353,7 +352,7 @@ func _pathfind_to_object(obj: InteractableObject) -> void:
 	# Try to reserve the object
 	if not obj.reserve(self):
 		# Object got reserved/occupied by someone else, try to find another
-		print("[NPC ", npc_id, "] Could not reserve ", obj.get_object_name(), ", finding alternative")
+
 		_start_waiting()
 		return
 
@@ -375,14 +374,11 @@ func _pathfind_to_object(obj: InteractableObject) -> void:
 
 	# Pre-smooth the path to remove unnecessary waypoints
 	if path_smoothing_enabled and current_path.size() > 2:
-		var original_size := current_path.size()
 		current_path = _smooth_path(current_path)
-		if current_path.size() < original_size:
-			print("[NPC ", npc_id, "] Path smoothed: ", original_size, " -> ", current_path.size(), " waypoints")
 
 	path_index = 0
 
-	print("[NPC ", npc_id, "] Pathfinding to ", obj.get_object_name(), " for ", Motive.get_motive_name(motives.get_most_urgent_motive()))
+
 
 	if current_path.size() > 0:
 		current_state = State.WALKING
@@ -449,7 +445,7 @@ func _start_using_object() -> void:
 		_start_waiting()
 		return
 
-	print("[NPC ", npc_id, "] Started using ", target_object.get_object_name())
+
 	object_use_timer = target_object.use_duration
 	current_state = State.USING_OBJECT
 	velocity = Vector2.ZERO
@@ -467,11 +463,9 @@ func _use_object(delta: float, game_delta: float) -> void:
 	# Object use timer runs on game time
 	object_use_timer -= game_delta
 	if object_use_timer <= 0.0:
-		print("[NPC ", npc_id, "] Timer done, stopping use")
 		_stop_using_object()
 	# Also stop early if the motive is fully satisfied
 	elif _is_motive_satisfied():
-		print("[NPC ", npc_id, "] Motive satisfied, stopping early")
 		_stop_using_object()
 
 func _is_motive_satisfied() -> bool:
@@ -485,7 +479,6 @@ func _is_motive_satisfied() -> bool:
 
 func _stop_using_object() -> void:
 	if target_object != null:
-		print("[NPC ", npc_id, "] Finished using ", target_object.get_object_name())
 		target_object.stop_use(self)
 		target_object = null
 	current_state = State.IDLE
@@ -496,27 +489,17 @@ func _start_waiting() -> void:
 	current_state = State.WAITING
 
 func _on_motive_depleted(motive_type: Motive.MotiveType) -> void:
-	print("[NPC ", npc_id, "] FORCED ACTION: ", Motive.get_motive_name(motive_type), " depleted!")
-	# Force find an object to fulfill this need
 	_force_fulfill_motive(motive_type)
 
-func _on_motive_critical(motive_type: Motive.MotiveType) -> void:
-	# Interrupt current action if not already addressing needs
+func _on_motive_critical(_motive_type: Motive.MotiveType) -> void:
 	if current_state != State.USING_OBJECT:
-		print("[NPC ", npc_id, "] Interrupting to address critical ", Motive.get_motive_name(motive_type))
 		current_state = State.IDLE
 
 func _force_fulfill_motive(motive_type: Motive.MotiveType) -> void:
-	# Find any object that can fulfill this motive
-	print("[NPC ", npc_id, "] Looking for object to fulfill ", Motive.get_motive_name(motive_type), ", available_objects count: ", available_objects.size())
 	for obj in available_objects:
-		var can_fulfill := obj.can_fulfill(motive_type)
-		var is_available := obj.is_available_for(self)
-		print("[NPC ", npc_id, "]   - ", obj.name, " can_fulfill=", can_fulfill, " is_available=", is_available)
-		if can_fulfill and is_available:
+		if obj.can_fulfill(motive_type) and obj.is_available_for(self):
 			_pathfind_to_object(obj)
 			return
-	print("[NPC ", npc_id, "] No object available to fulfill ", Motive.get_motive_name(motive_type))
 
 # Called by level to set available objects
 func set_available_objects(objects: Array[InteractableObject]) -> void:
@@ -531,7 +514,6 @@ func set_wander_positions(positions: Array[Vector2]) -> void:
 
 func set_astar(astar_ref: AStarGrid2D) -> void:
 	astar = astar_ref
-	print("[NPC ", npc_id, "] AStar set")
 
 func set_game_clock(clock: GameClock) -> void:
 	game_clock = clock
