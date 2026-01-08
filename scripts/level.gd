@@ -10,12 +10,17 @@ const FLOOR_COLOR := Color(0.15, 0.12, 0.1)
 @onready var player: CharacterBody2D = $Player
 
 var npc_scene: PackedScene = preload("res://scenes/npc.tscn")
+var bed_scene: PackedScene = preload("res://scenes/objects/bed.tscn")
+var fridge_scene: PackedScene = preload("res://scenes/objects/fridge.tscn")
+var toilet_scene: PackedScene = preload("res://scenes/objects/toilet.tscn")
+var shower_scene: PackedScene = preload("res://scenes/objects/shower.tscn")
 
 # ASCII map of the world - '#' = wall, ' ' = floor, 'P' = player start
+# Object markers: 'B' = bed, 'F' = fridge, 'T' = toilet, 'S' = shower
 const WORLD_MAP := """
 ################################################################################
 #            #         #                    #              #                   #
-#            #         #                    #              #                   #
+#   B        #    F    #        B           #     T  S     #         F         #
 #            #         #                    #              #                   #
 #            #         #                    #              #                   #
 #    P       #                                                                 #
@@ -23,68 +28,68 @@ const WORLD_MAP := """
 #            #         #                    #              #                   #
 #                      #                    #              #                   #
 #            #         #                    #                                  #
-#            #         #                    #              #                   #
+#   T  S     #         #                    #              #                   #
 #######  #####         ##########  ##########              #############  ######
 #            #                     #                       #                   #
-#            #                     #                       #                   #
+#     F      #                     #                       #      B            #
 #            #                     #                       #                   #
 #            #                     #                                           #
 #                                  #                       #                   #
 #            #                     #                       #                   #
-#            #                     #                       #                   #
+#   B        #                     #      T  S             #                   #
 #            #                     ####  ###################                   #
 #            #                          #                                      #
 #            #                          #                  #                   #
 ####  ########                          #                  #                   #
 #                                       #                                      #
-#                                       #                  #                   #
+#     T  S                              #                  #        F          #
 #                 ################      #                  #                   #
 #                 #              #                         #####  ##############
-#                 #              #      #                  #                   #
-#                                #      #                  #                   #
+#                 #      B       #      #                  #                   #
+#       F                        #      #                  #                   #
 #                 #              #      #                                      #
 #                 #              #      #                  #                   #
 #######  ##########              #      #                  #                   #
-#                 #                     #                  #                   #
+#                 #                     #                  #       B           #
 #                 #              #      #                                      #
-#                 #              #      #############  #####                   #
+#    B            #              #      #############  #####                   #
 #                                #             #                               #
 #                 #              #             #           #                   #
-#                 #              #             #           #                   #
+#    T  S         #              #             #           #      T  S         #
 #                 ####  ##########                                             #
 #                        #                     #           #                   #
-#                        #                     #           #                   #
-#                        #                     #           #                   #
+#       F                #                     #           #                   #
+#                        #                     #           #        F          #
 ########  ################                     #           #############  ######
 #                   #                          #                               #
-#                   #                          #                               #
+#       B           #                          #             B                 #
 #                   #                          #                               #
 #                          ############  #######                               #
 #                   #      #                               #                   #
-#                   #      #                               #                   #
+#      T  S         #      #                               #                   #
 #                   #                                      #                   #
-#                   #      #                               #                   #
+#                   #      #       F                       #       T  S        #
 #                   #      #                                                   #
 #                   #      #                               #                   #
 ######  #############      #                               #                   #
 #                          #         ###########  ##########                   #
-#                          #         #                                         #
+#        F                 #         #                                         #
 #                                    #                     #                   #
-#                          #         #                     #                   #
-#                          #                               #                   #
+#                          #         #       B             #        B          #
+#         B                #                               #                   #
 #                          #         #                     #                   #
 #                          #         #                     #############  ######
 #                          #         #                                #        #
 ###########  ###############         #                                #        #
 #                          #                                          #        #
-#                          #         #                                         #
+#       T  S               #         #              F                          #
 #                          #         #                                #        #
 #                                    #                                #        #
-#                          #         #                                #        #
+#          F               #         #                                #        #
 #                          #         #####################  ###########        #
 #                          #                                                   #
-#                          #                                          #        #
-#                          #                                          #        #
+#          B               #                                          #    B   #
+#                          #                   T  S                   #        #
 ################################################################################
 """
 
@@ -93,6 +98,7 @@ var walkable_positions: Array[Vector2] = []
 var map_width: int = 0
 var map_height: int = 0
 var astar: AStarGrid2D
+var all_objects: Array[InteractableObject] = []
 
 func _ready() -> void:
 	# Create reusable collision shape
@@ -131,8 +137,28 @@ func _parse_and_build_world() -> void:
 				"P":
 					player.position = pos
 					walkable_positions.append(pos)
+				"B":
+					_spawn_object(bed_scene, pos)
+					walkable_positions.append(pos)
+				"F":
+					_spawn_object(fridge_scene, pos)
+					walkable_positions.append(pos)
+				"T":
+					_spawn_object(toilet_scene, pos)
+					walkable_positions.append(pos)
+				"S":
+					_spawn_object(shower_scene, pos)
+					walkable_positions.append(pos)
 				" ":
 					walkable_positions.append(pos)
+
+	print("Spawned ", all_objects.size(), " interactable objects")
+
+func _spawn_object(scene: PackedScene, pos: Vector2) -> void:
+	var obj: InteractableObject = scene.instantiate()
+	obj.position = pos
+	add_child(obj)
+	all_objects.append(obj)
 
 func _create_wall(pos: Vector2) -> void:
 	var wall := StaticBody2D.new()
@@ -194,6 +220,7 @@ func _spawn_npcs() -> void:
 		# Give the NPC the list of walkable positions and the astar reference
 		npc.set_walkable_positions(walkable_positions)
 		npc.set_astar(astar)
+		npc.set_available_objects(all_objects)
 
 		add_child(npc)
 
