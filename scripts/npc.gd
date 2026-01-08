@@ -117,6 +117,9 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		push_velocity = push_velocity.move_toward(Vector2.ZERO, 200.0 * delta)
 
+	# Keep NPC within valid bounds (prevent clipping through walls)
+	_clamp_to_valid_position()
+
 	# Update motives using game time
 	motives.update(game_delta)
 
@@ -497,6 +500,32 @@ func on_object_out_of_range(_obj: InteractableObject) -> void:
 # Called by player when bumping into this NPC
 func receive_push(push: Vector2) -> void:
 	push_velocity = push
+
+# Clamp NPC position to valid walkable area
+func _clamp_to_valid_position() -> void:
+	if astar == null:
+		return
+
+	# Convert current position to grid coordinates
+	var grid_pos := Vector2i(
+		int(global_position.x / TILE_SIZE),
+		int(global_position.y / TILE_SIZE)
+	)
+
+	# Check if current grid cell is solid (wall)
+	if astar.is_point_solid(grid_pos):
+		# Find nearest walkable position
+		var nearest_dist := INF
+		var nearest_pos := global_position
+		for pos in walkable_positions:
+			var dist := global_position.distance_to(pos)
+			if dist < nearest_dist:
+				nearest_dist = dist
+				nearest_pos = pos
+
+		# Teleport to nearest valid position
+		global_position = nearest_pos
+		print("[NPC ", npc_id, "] Corrected position - was in wall!")
 
 # Update the collision shape radius
 func _update_collision_radius(new_radius: float) -> void:
