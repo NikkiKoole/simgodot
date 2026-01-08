@@ -33,7 +33,7 @@ var speed_multiplier: int:
 		return SPEED_LEVELS[speed_index]
 
 func _ready() -> void:
-	print("[GameClock] Started at Day ", day, ", ", _format_time(), " (1 tick = 1 game minute)")
+	print("[GameClock] Speed: ", speed_multiplier, "x")
 
 func _process(delta: float) -> void:
 	if is_paused:
@@ -65,12 +65,10 @@ func _advance_hour() -> void:
 		_advance_day()
 
 	hour_passed.emit(hour)
-	print("[GameClock] ", _format_time())
 
 func _advance_day() -> void:
 	day += 1
 	day_passed.emit(day)
-	print("[GameClock] Day ", day, " started")
 
 ## Get total minutes elapsed today (0-1439)
 func get_total_minutes_today() -> int:
@@ -110,7 +108,6 @@ func slow_down() -> void:
 ## Pause/unpause the clock
 func set_paused(paused: bool) -> void:
 	is_paused = paused
-	print("[GameClock] ", "Paused" if paused else "Resumed")
 
 func toggle_pause() -> void:
 	set_paused(not is_paused)
@@ -119,7 +116,6 @@ func toggle_pause() -> void:
 func set_time(new_hour: int, new_minute: int = 0) -> void:
 	hour = clampi(new_hour, 0, 23)
 	minute = clampi(new_minute, 0, 59)
-	print("[GameClock] Time set to ", _format_time())
 
 ## Get delta scaled by game speed (for simulation: movement, timers, etc.)
 func get_scaled_delta(real_delta: float) -> float:

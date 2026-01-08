@@ -81,12 +81,10 @@ func _decay_motive(motive_type: MotiveType, amount: float) -> void:
 		# Check for critical level
 		if old_value > CRITICAL_THRESHOLD and new_value <= CRITICAL_THRESHOLD:
 			critical_level.emit(motive_type)
-			print("[", owner_name, "] CRITICAL: ", get_motive_name(motive_type), " is getting low! (", snapped(new_value, 0.1), ")")
 
 		# Check for depletion
 		if new_value <= MIN_VALUE:
 			motive_depleted.emit(motive_type)
-			print("[", owner_name, "] DEPLETED: ", get_motive_name(motive_type), " has hit rock bottom!")
 
 ## Increase a motive value (when fulfilled by an object)
 ## amount is per game minute of use

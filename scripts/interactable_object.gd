@@ -38,13 +38,11 @@ func _ready() -> void:
 	body_exited.connect(_on_body_exited)
 
 func _process(_delta: float) -> void:
-	# Debug: check for orphaned "in use" state
+	# Fix orphaned "in use" state
 	if is_occupied and current_user == null:
-		print("[Object ", name, "] BUG: occupied but no user!")
 		is_occupied = false
 		sprite.color = original_color
 	elif is_occupied and not is_instance_valid(current_user):
-		print("[Object ", name, "] BUG: user was freed!")
 		is_occupied = false
 		current_user = null
 		sprite.color = original_color
@@ -110,11 +108,9 @@ func get_fulfillment_rate(motive_type: Motive.MotiveType) -> float:
 ## Start using this object
 func start_use(user: Node2D) -> bool:
 	if is_occupied:
-		print("[Object ", name, "] start_use FAILED - already occupied by ", current_user)
 		return false
 	# Allow use if reserved by this user or not reserved
 	if is_reserved and reserved_by != user:
-		print("[Object ", name, "] start_use FAILED - reserved by ", reserved_by)
 		return false
 
 	is_occupied = true
@@ -124,20 +120,15 @@ func start_use(user: Node2D) -> bool:
 	reserved_by = null
 	sprite.color = IN_USE_COLOR
 	interaction_started.emit(user)
-	print("[Object ", name, "] start_use SUCCESS by ", user)
 	return true
 
 ## Stop using this object
 func stop_use(user: Node2D) -> void:
-	print("[Object ", name, "] stop_use called by ", user, " current_user=", current_user)
 	if current_user == user:
 		is_occupied = false
 		current_user = null
 		sprite.color = original_color
 		interaction_finished.emit(user)
-		print("[Object ", name, "] stop_use SUCCESS - now free")
-	else:
-		print("[Object ", name, "] stop_use IGNORED - user mismatch")
 
 ## Get the interaction position (where entity should stand/sit)
 func get_interaction_position() -> Vector2:

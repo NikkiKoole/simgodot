@@ -124,7 +124,7 @@ func _parse_and_build_world() -> void:
 					walkable_positions.append(pos)
 					wander_positions.append(pos)
 
-	print("Spawned ", all_objects.size(), " interactable objects")
+
 
 func _spawn_object(scene: PackedScene, pos: Vector2) -> void:
 	var obj: InteractableObject = scene.instantiate()
@@ -166,7 +166,7 @@ func _setup_astar() -> void:
 			if line[x] == "#":
 				astar.set_point_solid(Vector2i(x, y), true)
 
-	print("AStar grid setup complete: ", map_width, "x", map_height)
+
 
 func get_astar() -> AStarGrid2D:
 	return astar
@@ -197,5 +197,3 @@ func _spawn_npcs() -> void:
 		npc.set_game_clock(game_clock)
 
 		add_child(npc)
-
-	print("Spawned ", npc_count, " NPCs with ", walkable_positions.size(), " walkable positions")

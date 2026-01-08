@@ -108,7 +108,6 @@ func _start_using_nearest_object() -> void:
 	is_using_object = true
 	object_use_timer = closest.use_duration  # This is in game minutes
 	velocity = Vector2.ZERO
-	print("[Player] Started using ", closest.get_object_name())
 
 func _use_object(real_delta: float, game_delta: float) -> void:
 	if current_object == null:
@@ -133,7 +132,6 @@ func _use_object(real_delta: float, game_delta: float) -> void:
 
 func _stop_using_object() -> void:
 	if current_object != null:
-		print("[Player] Finished using ", current_object.get_object_name())
 		current_object.stop_use(self)
 		current_object = null
 	is_using_object = false
@@ -142,11 +140,11 @@ func _has_movement_input() -> bool:
 	return Input.is_action_pressed("move_left") or Input.is_action_pressed("move_right") or \
 		   Input.is_action_pressed("move_up") or Input.is_action_pressed("move_down")
 
-func _on_motive_depleted(motive_type: Motive.MotiveType) -> void:
-	print("[Player] WARNING: ", Motive.get_motive_name(motive_type), " depleted! Find a ", _get_object_hint(motive_type), "!")
+func _on_motive_depleted(_motive_type: Motive.MotiveType) -> void:
+	pass
 
-func _on_motive_critical(motive_type: Motive.MotiveType) -> void:
-	print("[Player] ", Motive.get_motive_name(motive_type), " is getting low!")
+func _on_motive_critical(_motive_type: Motive.MotiveType) -> void:
+	pass
 
 func _get_object_hint(motive_type: Motive.MotiveType) -> String:
 	match motive_type:
@@ -166,7 +164,6 @@ func can_interact_with_object(_obj: InteractableObject) -> bool:
 func on_object_in_range(obj: InteractableObject) -> void:
 	if not nearby_objects.has(obj):
 		nearby_objects.append(obj)
-		print("[Player] ", obj.get_object_name(), " is nearby (press E to interact)")
 
 func on_object_out_of_range(obj: InteractableObject) -> void:
 	nearby_objects.erase(obj)
