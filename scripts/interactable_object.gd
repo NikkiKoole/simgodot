@@ -14,6 +14,10 @@ extends Area2D
 var is_occupied: bool = false
 var current_user: Node2D = null
 
+## Reservation system - object is claimed but not yet in use
+var is_reserved: bool = false
+var reserved_by: Node2D = null
+
 ## Visual representation (ColorRect named Sprite2D for compatibility)
 @onready var sprite: ColorRect = $Sprite2D
 @onready var collision: CollisionShape2D = $CollisionShape2D
@@ -61,6 +65,28 @@ func get_advertisement_score(motives: Motive) -> float:
 
 	return total_score
 
+## Check if this object is available (not occupied or reserved by someone else)
+func is_available_for(user: Node2D = null) -> bool:
+	if is_occupied:
+		return false
+	if is_reserved and reserved_by != user:
+		return false
+	return true
+
+## Reserve this object for an NPC that's pathfinding to it
+func reserve(user: Node2D) -> bool:
+	if not is_available_for(user):
+		return false
+	is_reserved = true
+	reserved_by = user
+	return true
+
+## Cancel a reservation (e.g., NPC changed their mind or found path blocked)
+func cancel_reservation(user: Node2D) -> void:
+	if reserved_by == user:
+		is_reserved = false
+		reserved_by = null
+
 ## Check if this object can fulfill a specific motive type
 func can_fulfill(motive_type: Motive.MotiveType) -> bool:
 	return motive_type in advertisements and advertisements[motive_type] > 0
@@ -73,9 +99,15 @@ func get_fulfillment_rate(motive_type: Motive.MotiveType) -> float:
 func start_use(user: Node2D) -> bool:
 	if is_occupied:
 		return false
+	# Allow use if reserved by this user or not reserved
+	if is_reserved and reserved_by != user:
+		return false
 
 	is_occupied = true
 	current_user = user
+	# Clear reservation since we're now using it
+	is_reserved = false
+	reserved_by = null
 	sprite.color = IN_USE_COLOR
 	interaction_started.emit(user)
 	return true

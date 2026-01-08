@@ -5,7 +5,7 @@ const WALL_COLOR := Color(0.35, 0.35, 0.45)
 const FLOOR_COLOR := Color(0.15, 0.12, 0.1)
 
 ## Number of NPCs to spawn
-@export var npc_count: int = 8
+@export var npc_count: int = 4
 
 @onready var player: CharacterBody2D = $Player
 
@@ -18,83 +18,27 @@ var shower_scene: PackedScene = preload("res://scenes/objects/shower.tscn")
 # ASCII map of the world - '#' = wall, ' ' = floor, 'P' = player start
 # Object markers: 'B' = bed, 'F' = fridge, 'T' = toilet, 'S' = shower
 const WORLD_MAP := """
-################################################################################
-#            #         #                    #              #                   #
-#   B        #    F    #        B           #     T  S     #         F         #
-#            #         #                    #              #                   #
-#            #         #                    #              #                   #
-#    P       #                                                                 #
-#            #         #                    #              #                   #
-#            #         #                    #              #                   #
-#                      #                    #              #                   #
-#            #         #                    #                                  #
-#   T  S     #         #                    #              #                   #
-#######  #####         ##########  ##########              #############  ######
-#            #                     #                       #                   #
-#     F      #                     #                       #      B            #
-#            #                     #                       #                   #
-#            #                     #                                           #
-#                                  #                       #                   #
-#            #                     #                       #                   #
-#   B        #                     #      T  S             #                   #
-#            #                     ####  ###################                   #
-#            #                          #                                      #
-#            #                          #                  #                   #
-####  ########                          #                  #                   #
-#                                       #                                      #
-#     T  S                              #                  #        F          #
-#                 ################      #                  #                   #
-#                 #              #                         #####  ##############
-#                 #      B       #      #                  #                   #
-#       F                        #      #                  #                   #
-#                 #              #      #                                      #
-#                 #              #      #                  #                   #
-#######  ##########              #      #                  #                   #
-#                 #                     #                  #       B           #
-#                 #              #      #                                      #
-#    B            #              #      #############  #####                   #
-#                                #             #                               #
-#                 #              #             #           #                   #
-#    T  S         #              #             #           #      T  S         #
-#                 ####  ##########                                             #
-#                        #                     #           #                   #
-#       F                #                     #           #                   #
-#                        #                     #           #        F          #
-########  ################                     #           #############  ######
-#                   #                          #                               #
-#       B           #                          #             B                 #
-#                   #                          #                               #
-#                          ############  #######                               #
-#                   #      #                               #                   #
-#      T  S         #      #                               #                   #
-#                   #                                      #                   #
-#                   #      #       F                       #       T  S        #
-#                   #      #                                                   #
-#                   #      #                               #                   #
-######  #############      #                               #                   #
-#                          #         ###########  ##########                   #
-#        F                 #         #                                         #
-#                                    #                     #                   #
-#                          #         #       B             #        B          #
-#         B                #                               #                   #
-#                          #         #                     #                   #
-#                          #         #                     #############  ######
-#                          #         #                                #        #
-###########  ###############         #                                #        #
-#                          #                                          #        #
-#       T  S               #         #              F                          #
-#                          #         #                                #        #
-#                                    #                                #        #
-#          F               #         #                                #        #
-#                          #         #####################  ###########        #
-#                          #                                                   #
-#          B               #                                          #    B   #
-#                          #                   T  S                   #        #
-################################################################################
+#################
+#       #       #
+# B   B #   F   #
+#       #       #
+#            F  #
+#       #       #
+###  ####    F  #
+#       #  ######
+#  P            #
+#       ###  ####
+###  ####       #
+#       #   T   #
+#       #       #
+#       #   S   #
+#       #       #
+#################
 """
 
 var wall_shape: RectangleShape2D
-var walkable_positions: Array[Vector2] = []
+var walkable_positions: Array[Vector2] = []  # All walkable tiles (for pathfinding)
+var wander_positions: Array[Vector2] = []    # Only empty floor tiles (for random wandering)
 var map_width: int = 0
 var map_height: int = 0
 var astar: AStarGrid2D
@@ -150,9 +94,11 @@ func _parse_and_build_world() -> void:
 				"P":
 					player.position = pos
 					walkable_positions.append(pos)
+					wander_positions.append(pos)
 				"B":
 					_spawn_object(bed_scene, pos)
 					walkable_positions.append(pos)
+					# Don't add to wander_positions - NPCs shouldn't idle on objects
 				"F":
 					_spawn_object(fridge_scene, pos)
 					walkable_positions.append(pos)
@@ -164,6 +110,7 @@ func _parse_and_build_world() -> void:
 					walkable_positions.append(pos)
 				" ":
 					walkable_positions.append(pos)
+					wander_positions.append(pos)
 
 	print("Spawned ", all_objects.size(), " interactable objects")
 
@@ -230,8 +177,9 @@ func _spawn_npcs() -> void:
 		else:
 			npc.position = walkable_positions.pick_random()
 
-		# Give the NPC the list of walkable positions and the astar reference
+		# Give the NPC the list of positions and the astar reference
 		npc.set_walkable_positions(walkable_positions)
+		npc.set_wander_positions(wander_positions)
 		npc.set_astar(astar)
 		npc.set_available_objects(all_objects)
 		npc.set_game_clock(game_clock)

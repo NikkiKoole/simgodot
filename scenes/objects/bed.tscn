@@ -10,7 +10,6 @@ collision_layer = 4
 collision_mask = 3
 script = ExtResource("1_interactable")
 advertisements = {
-0: 30.0,
 1: 50.0
 }
 use_duration = 8.0

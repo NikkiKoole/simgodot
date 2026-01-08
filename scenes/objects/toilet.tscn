@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3 uid="uid://toilet001"]
 
-[ext_resource type="Script" path="res://scripts/interactable_object.gd" id="1_interactable"]
+[ext_resource type="Script" uid="uid://hau3p2bobclt" path="res://scripts/interactable_object.gd" id="1_interactable"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_collision"]
 size = Vector2(24, 32)

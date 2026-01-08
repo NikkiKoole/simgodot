@@ -19,8 +19,9 @@ static var npc_counter: int = 0
 # Motive system
 var motives: Motive
 
-# Reference to walkable positions (set by level)
-var walkable_positions: Array[Vector2] = []
+# Reference to positions (set by level)
+var walkable_positions: Array[Vector2] = []  # All walkable tiles (for pathfinding)
+var wander_positions: Array[Vector2] = []    # Only empty floor tiles (for random wandering)
 var astar: AStarGrid2D
 var current_path: PackedVector2Array = []
 var path_index: int = 0
@@ -119,20 +120,60 @@ func _find_best_object_for_needs() -> InteractableObject:
 	if available_objects.is_empty():
 		return null
 
+	# Get the most urgent motive first
+	var urgent_motive := motives.get_most_urgent_motive()
+
+	# First, try to find an object that fulfills the most urgent need
 	var best_object: InteractableObject = null
 	var best_score: float = 0.0
 
 	for obj in available_objects:
-		if obj.is_occupied:
+		# Check if object is available (not occupied or reserved by someone else)
+		if not obj.is_available_for(self):
 			continue
-		var score := obj.get_advertisement_score(motives)
-		if score > best_score:
-			best_score = score
+
+		# Only consider objects that can fulfill the urgent motive
+		if not obj.can_fulfill(urgent_motive):
+			continue
+
+		# Score based on fulfillment rate for this specific motive
+		var fulfillment_rate := obj.get_fulfillment_rate(urgent_motive)
+		if fulfillment_rate <= 0:
+			continue
+
+		# Factor in distance - closer objects are better
+		var distance := global_position.distance_to(obj.global_position)
+		# Distance penalty: score is divided by distance factor
+		var distance_factor := 1.0 + (distance / 320.0)
+		var final_score := fulfillment_rate / distance_factor
+
+		if final_score > best_score:
+			best_score = final_score
 			best_object = obj
+
+	# If no object found for urgent motive, try any critical motive
+	if best_object == null:
+		var critical_motives := motives.get_critical_motives()
+		for motive in critical_motives:
+			for obj in available_objects:
+				if not obj.is_available_for(self):
+					continue
+				if obj.can_fulfill(motive):
+					return obj
 
 	return best_object
 
 func _pathfind_to_object(obj: InteractableObject) -> void:
+	# Cancel any existing reservation first
+	_cancel_current_reservation()
+
+	# Try to reserve the object
+	if not obj.reserve(self):
+		# Object got reserved/occupied by someone else, try to find another
+		print("[NPC ", npc_id, "] Could not reserve ", obj.get_object_name(), ", finding alternative")
+		_start_waiting()
+		return
+
 	target_object = obj
 	var target_pos := obj.get_interaction_position()
 
@@ -155,23 +196,30 @@ func _pathfind_to_object(obj: InteractableObject) -> void:
 	if current_path.size() > 0:
 		current_state = State.WALKING
 	else:
-		# No path found, clear target and wait
+		# No path found, cancel reservation and wait
+		_cancel_current_reservation()
 		target_object = null
 		_start_waiting()
 
+func _cancel_current_reservation() -> void:
+	if target_object != null:
+		target_object.cancel_reservation(self)
+
 func _pick_random_destination() -> void:
+	# Cancel any existing reservation when wandering
+	_cancel_current_reservation()
 	target_object = null
 
-	if walkable_positions.is_empty() or astar == null:
+	if wander_positions.is_empty() or astar == null:
 		return
 
-	# Pick a random walkable position
-	var target: Vector2 = walkable_positions.pick_random()
+	# Pick a random empty floor position (not on objects)
+	var target: Vector2 = wander_positions.pick_random()
 
 	# Make sure it's not too close to current position
 	var attempts := 0
 	while target.distance_to(global_position) < 100.0 and attempts < 10:
-		target = walkable_positions.pick_random() as Vector2
+		target = wander_positions.pick_random() as Vector2
 		attempts += 1
 
 	# Convert world positions to grid coordinates
@@ -194,7 +242,13 @@ func _pick_random_destination() -> void:
 		_start_waiting()
 
 func _start_using_object() -> void:
-	if target_object == null or not target_object.start_use(self):
+	if target_object == null:
+		_start_waiting()
+		return
+
+	if not target_object.start_use(self):
+		# Failed to start using - cancel reservation and clear target
+		target_object.cancel_reservation(self)
 		target_object = null
 		_start_waiting()
 		return
@@ -214,9 +268,10 @@ func _use_object(delta: float, game_delta: float) -> void:
 		var rate: float = target_object.get_fulfillment_rate(motive_type)
 		motives.fulfill(motive_type, rate * game_delta)
 
-	# Object use timer runs on real time (actual animation/action duration)
+	# Object use timer runs on real time
 	object_use_timer -= delta
 	if object_use_timer <= 0.0:
+		print("[NPC ", npc_id, "] Timer done, stopping use")
 		_stop_using_object()
 
 func _stop_using_object() -> void:
@@ -244,18 +299,26 @@ func _on_motive_critical(motive_type: Motive.MotiveType) -> void:
 
 func _force_fulfill_motive(motive_type: Motive.MotiveType) -> void:
 	# Find any object that can fulfill this motive
+	print("[NPC ", npc_id, "] Looking for object to fulfill ", Motive.get_motive_name(motive_type), ", available_objects count: ", available_objects.size())
 	for obj in available_objects:
-		if obj.can_fulfill(motive_type) and not obj.is_occupied:
+		var can_fulfill := obj.can_fulfill(motive_type)
+		var is_available := obj.is_available_for(self)
+		print("[NPC ", npc_id, "]   - ", obj.name, " can_fulfill=", can_fulfill, " is_available=", is_available)
+		if can_fulfill and is_available:
 			_pathfind_to_object(obj)
 			return
 	print("[NPC ", npc_id, "] No object available to fulfill ", Motive.get_motive_name(motive_type))
 
 # Called by level to set available objects
 func set_available_objects(objects: Array[InteractableObject]) -> void:
-	available_objects = objects
+	# Make a copy so each NPC has their own list
+	available_objects = objects.duplicate()
 
 func set_walkable_positions(positions: Array[Vector2]) -> void:
 	walkable_positions = positions
+
+func set_wander_positions(positions: Array[Vector2]) -> void:
+	wander_positions = positions
 
 func set_astar(astar_ref: AStarGrid2D) -> void:
 	astar = astar_ref
@@ -268,9 +331,10 @@ func set_game_clock(clock: GameClock) -> void:
 func can_interact_with_object(_obj: InteractableObject) -> bool:
 	return true
 
-func on_object_in_range(obj: InteractableObject) -> void:
-	if not available_objects.has(obj):
-		available_objects.append(obj)
+func on_object_in_range(_obj: InteractableObject) -> void:
+	# NPCs know about all objects globally, no need to track by range
+	pass
 
-func on_object_out_of_range(obj: InteractableObject) -> void:
-	available_objects.erase(obj)
+func on_object_out_of_range(_obj: InteractableObject) -> void:
+	# NPCs know about all objects globally, no need to track by range
+	pass
