@@ -466,6 +466,9 @@ func spawn_station(type: String, position: Vector2, tags: Array = []) -> Station
 	# Track as runtime-spawned station
 	runtime_stations.append(station)
 
+	# Update all NPCs to know about this new station
+	_notify_npcs_of_new_station(station)
+
 	# Emit signal
 	station_spawned.emit(station)
 
@@ -615,6 +618,42 @@ func spawn_npc(position: Vector2, motives_dict: Dictionary = {}) -> Node:
 	npc_spawned.emit(npc)
 
 	return npc
+
+
+## Get all NPCs in the scene (NPCs have a 'motives' property)
+func _get_all_npcs() -> Array:
+	var npcs: Array = []
+	var level: Node = _get_level_node()
+	if level == null:
+		return npcs
+
+	for child in level.get_children():
+		if child.get("motives") != null:
+			npcs.append(child)
+
+	return npcs
+
+
+## Notify all existing NPCs about a newly spawned station
+func _notify_npcs_of_new_station(station: Station) -> void:
+	var npcs := _get_all_npcs()
+	for npc in npcs:
+		if npc.has_method("set_available_stations") and npc.get("available_stations") != null:
+			var stations: Array[Station] = npc.available_stations.duplicate()
+			if station not in stations:
+				stations.append(station)
+				npc.set_available_stations(stations)
+
+
+## Notify all existing NPCs about a newly spawned container
+func _notify_npcs_of_new_container(container: ItemContainer) -> void:
+	var npcs := _get_all_npcs()
+	for npc in npcs:
+		if npc.has_method("set_available_containers") and npc.get("available_containers") != null:
+			var containers: Array[ItemContainer] = npc.available_containers.duplicate()
+			if container not in containers:
+				containers.append(container)
+				npc.set_available_containers(containers)
 
 
 ## Initialize an NPC with required data from the level
