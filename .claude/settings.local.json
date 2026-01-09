@@ -1,0 +1,5 @@
+{
+  "permissions": {
+    "allow": ["Skill(requesting-code-review)", "Bash(ls:*)"]
+  }
+}

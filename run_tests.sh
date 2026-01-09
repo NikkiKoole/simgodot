@@ -17,6 +17,7 @@ TESTS=(
     "test_need_jobs"
     "test_recipe_cook"
     "test_recipe_toilet"
+    "test_recipe_tv"
 )
 
 total_passed=0
