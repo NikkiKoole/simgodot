@@ -371,7 +371,7 @@
         "Project runs without errors"
       ],
       "priority": 21,
-      "passes": false,
+      "passes": true,
       "notes": "Integration test for interruption system"
     }
   ]

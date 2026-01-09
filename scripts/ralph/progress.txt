@@ -579,3 +579,36 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Debug position output helps diagnose pathfinding issues (NPC wandering outside room = bug)
 
 ---
+
+## 2026-01-09 - US-021
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created test_debug_interruption_scenario.gd end-to-end test for job interruption and resumption
+- Test uses only DebugCommands API (no direct instantiation or mocks)
+- Test spawns: fridge with raw_food, counter, stove, NPC1 with low hunger
+- NPC1 claims job, hauls raw_food to counter, places item and starts prep work
+- Test waits until item is at counter station, then interrupts via DebugCommands.interrupt_job()
+- Verifies item remains at counter after interruption (not dropped or lost)
+- Spawns NPC2 who claims the interrupted job
+- NPC2 recognizes item is already at station, skips hauling, resumes work
+- NPC2 completes prep at counter, cooks at stove, job completes
+- Verifies NPC2's hunger increases after completing meal
+- Test runs headlessly and passes in ~650 frames (~11 seconds)
+- Fixed DebugCommands.interrupt_job() to call NPC's interrupt_current_job() when NPC is actively working
+- Fixed NPC.start_hauling_for_job() to check for items at stations even when step_index=0 (for interrupted jobs)
+- All 15 test suites pass (1134 total assertions)
+
+**Files changed:**
+- scripts/tests/test_debug_interruption_scenario.gd (new)
+- scenes/tests/test_debug_interruption_scenario.tscn (new)
+- scripts/debug_commands.gd (interrupt_job now properly interrupts NPC when they have current_job set)
+- scripts/npc.gd (start_hauling_for_job checks for items at stations for INTERRUPTED/CLAIMED jobs)
+- run_tests.sh (added test_debug_interruption_scenario)
+
+**Learnings for future iterations:**
+- DebugCommands.interrupt_job() must check if NPC.current_job matches the job before calling interrupt_current_job()
+- When resuming interrupted jobs, NPCs should check for items at stations even at step 0
+- The `was_interrupted` check should use job state (INTERRUPTED or CLAIMED) not just step_index > 0
+- Wait for item to be placed at station before interrupting to test "items remain at station" scenario
+- NPC._account_for_existing_items() reduces gather requirements for items already at stations
+
+---
