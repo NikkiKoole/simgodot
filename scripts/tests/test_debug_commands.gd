@@ -59,6 +59,18 @@ func run_tests() -> void:
 	await test_get_runtime_npcs()
 	await test_clear_runtime_npcs()
 
+	# US-005: Job management tests
+	await test_post_job_cook_simple_meal()
+	await test_post_job_use_toilet()
+	await test_post_job_watch_tv()
+	test_post_job_invalid_path()
+	await test_post_job_signal()
+	await test_interrupt_job()
+	await test_interrupt_job_signal()
+	test_interrupt_job_invalid()
+	await test_get_all_jobs()
+	await test_get_jobs_by_state()
+
 	_log_summary()
 
 
@@ -955,3 +967,261 @@ func test_clear_runtime_npcs() -> void:
 	assert_eq(DebugCommands.get_runtime_npcs().size(), 0, "Should have 0 runtime NPCs after clear")
 	assert_false(is_instance_valid(npc1), "npc1 should be freed")
 	assert_false(is_instance_valid(npc2), "npc2 should be freed")
+
+
+# =============================================================================
+# US-005: Job Management Tests
+# =============================================================================
+
+func test_post_job_cook_simple_meal() -> void:
+	test("post_job loads cook_simple_meal recipe and creates job")
+
+	# Clear any existing jobs
+	JobBoard.clear_all_jobs()
+
+	var job: Job = DebugCommands.post_job("res://resources/recipes/cook_simple_meal.tres")
+
+	assert_not_null(job, "post_job should return a Job")
+	assert_not_null(job.recipe, "Job should have a recipe")
+	assert_eq(job.recipe.recipe_name, "Cook Simple Meal", "Recipe name should be 'Cook Simple Meal'")
+	assert_eq(job.state, Job.JobState.POSTED, "Job should be in POSTED state")
+
+	# Verify job is in JobBoard
+	var all_jobs: Array[Job] = DebugCommands.get_all_jobs()
+	assert_true(job in all_jobs, "Job should be in JobBoard")
+
+	# Cleanup
+	JobBoard.clear_all_jobs()
+
+
+func test_post_job_use_toilet() -> void:
+	test("post_job loads use_toilet recipe and creates job")
+
+	JobBoard.clear_all_jobs()
+
+	var job: Job = DebugCommands.post_job("res://resources/recipes/use_toilet.tres")
+
+	assert_not_null(job, "post_job should return a Job")
+	assert_not_null(job.recipe, "Job should have a recipe")
+	assert_eq(job.recipe.recipe_name, "Use Toilet", "Recipe name should be 'Use Toilet'")
+	assert_eq(job.state, Job.JobState.POSTED, "Job should be in POSTED state")
+
+	# Cleanup
+	JobBoard.clear_all_jobs()
+
+
+func test_post_job_watch_tv() -> void:
+	test("post_job loads watch_tv recipe and creates job")
+
+	JobBoard.clear_all_jobs()
+
+	var job: Job = DebugCommands.post_job("res://resources/recipes/watch_tv.tres")
+
+	assert_not_null(job, "post_job should return a Job")
+	assert_not_null(job.recipe, "Job should have a recipe")
+	assert_eq(job.recipe.recipe_name, "Watch TV", "Recipe name should be 'Watch TV'")
+	assert_eq(job.state, Job.JobState.POSTED, "Job should be in POSTED state")
+
+	# Cleanup
+	JobBoard.clear_all_jobs()
+
+
+func test_post_job_invalid_path() -> void:
+	test("post_job returns null for invalid recipe path")
+
+	JobBoard.clear_all_jobs()
+
+	# Empty path
+	var job1: Job = DebugCommands.post_job("")
+	assert_null(job1, "post_job should return null for empty path")
+
+	# Non-existent path
+	var job2: Job = DebugCommands.post_job("res://resources/recipes/non_existent.tres")
+	assert_null(job2, "post_job should return null for non-existent recipe")
+
+	# Invalid resource type
+	var job3: Job = DebugCommands.post_job("res://icon.svg")
+	assert_null(job3, "post_job should return null for non-Recipe resource")
+
+
+func test_post_job_signal() -> void:
+	test("post_job emits job_posted_debug signal")
+
+	JobBoard.clear_all_jobs()
+
+	var signal_data: Array = [false, null]
+
+	var callback := func(posted_job: Job) -> void:
+		signal_data[0] = true
+		signal_data[1] = posted_job
+
+	DebugCommands.job_posted_debug.connect(callback)
+
+	var job: Job = DebugCommands.post_job("res://resources/recipes/cook_simple_meal.tres")
+
+	await get_tree().process_frame
+
+	assert_true(signal_data[0], "job_posted_debug signal should be emitted")
+	assert_eq(signal_data[1], job, "Signal should pass the posted job")
+
+	# Cleanup
+	DebugCommands.job_posted_debug.disconnect(callback)
+	JobBoard.clear_all_jobs()
+
+
+func test_interrupt_job() -> void:
+	test("interrupt_job interrupts an IN_PROGRESS job")
+
+	JobBoard.clear_all_jobs()
+	DebugCommands.clear_runtime_npcs()
+
+	# Create a job and an NPC to claim it
+	var job: Job = DebugCommands.post_job("res://resources/recipes/cook_simple_meal.tres")
+	var npc: Node = DebugCommands.spawn_npc(Vector2(100, 100))
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# Claim and start the job
+	var claimed: bool = JobBoard.claim_job(job, npc)
+	assert_true(claimed, "Job should be claimed")
+
+	var started: bool = job.start()
+	assert_true(started, "Job should be started")
+	assert_eq(job.state, Job.JobState.IN_PROGRESS, "Job should be IN_PROGRESS")
+
+	# Interrupt the job
+	var result: bool = DebugCommands.interrupt_job(job)
+
+	assert_true(result, "interrupt_job should return true")
+	assert_eq(job.state, Job.JobState.INTERRUPTED, "Job should be INTERRUPTED")
+	assert_null(job.claimed_by, "Job should have no claimer after interruption")
+
+	# Cleanup
+	JobBoard.clear_all_jobs()
+	DebugCommands.clear_runtime_npcs()
+
+
+func test_interrupt_job_signal() -> void:
+	test("interrupt_job emits job_interrupted_debug signal")
+
+	JobBoard.clear_all_jobs()
+	DebugCommands.clear_runtime_npcs()
+
+	var signal_data: Array = [false, null]
+
+	var callback := func(interrupted_job: Job) -> void:
+		signal_data[0] = true
+		signal_data[1] = interrupted_job
+
+	DebugCommands.job_interrupted_debug.connect(callback)
+
+	# Create and start a job
+	var job: Job = DebugCommands.post_job("res://resources/recipes/cook_simple_meal.tres")
+	var npc: Node = DebugCommands.spawn_npc(Vector2(100, 100))
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	JobBoard.claim_job(job, npc)
+	job.start()
+
+	# Interrupt
+	DebugCommands.interrupt_job(job)
+
+	assert_true(signal_data[0], "job_interrupted_debug signal should be emitted")
+	assert_eq(signal_data[1], job, "Signal should pass the interrupted job")
+
+	# Cleanup
+	DebugCommands.job_interrupted_debug.disconnect(callback)
+	JobBoard.clear_all_jobs()
+	DebugCommands.clear_runtime_npcs()
+
+
+func test_interrupt_job_invalid() -> void:
+	test("interrupt_job returns false for invalid cases")
+
+	JobBoard.clear_all_jobs()
+
+	# Null job
+	var result1: bool = DebugCommands.interrupt_job(null)
+	assert_false(result1, "interrupt_job should return false for null job")
+
+	# Job not in progress (still POSTED)
+	var job: Job = DebugCommands.post_job("res://resources/recipes/cook_simple_meal.tres")
+	var result2: bool = DebugCommands.interrupt_job(job)
+	assert_false(result2, "interrupt_job should return false for job not IN_PROGRESS")
+
+	# Cleanup
+	JobBoard.clear_all_jobs()
+
+
+func test_get_all_jobs() -> void:
+	test("get_all_jobs returns all jobs from JobBoard")
+
+	JobBoard.clear_all_jobs()
+
+	# Post multiple jobs
+	var job1: Job = DebugCommands.post_job("res://resources/recipes/cook_simple_meal.tres")
+	var job2: Job = DebugCommands.post_job("res://resources/recipes/use_toilet.tres")
+	var job3: Job = DebugCommands.post_job("res://resources/recipes/watch_tv.tres")
+
+	await get_tree().process_frame
+
+	var all_jobs: Array[Job] = DebugCommands.get_all_jobs()
+
+	assert_eq(all_jobs.size(), 3, "Should have 3 jobs")
+	assert_true(job1 in all_jobs, "job1 should be in all_jobs")
+	assert_true(job2 in all_jobs, "job2 should be in all_jobs")
+	assert_true(job3 in all_jobs, "job3 should be in all_jobs")
+
+	# Cleanup
+	JobBoard.clear_all_jobs()
+
+
+func test_get_jobs_by_state() -> void:
+	test("get_jobs_by_state filters jobs by state")
+
+	JobBoard.clear_all_jobs()
+	DebugCommands.clear_runtime_npcs()
+
+	# Create jobs in different states
+	var job1: Job = DebugCommands.post_job("res://resources/recipes/cook_simple_meal.tres")
+	var job2: Job = DebugCommands.post_job("res://resources/recipes/use_toilet.tres")
+	var job3: Job = DebugCommands.post_job("res://resources/recipes/watch_tv.tres")
+
+	var npc: Node = DebugCommands.spawn_npc(Vector2(100, 100))
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# Claim and start job2
+	JobBoard.claim_job(job2, npc)
+	job2.start()
+
+	# Check POSTED jobs
+	var posted_jobs: Array[Job] = DebugCommands.get_jobs_by_state(Job.JobState.POSTED)
+	assert_eq(posted_jobs.size(), 2, "Should have 2 POSTED jobs")
+	assert_true(job1 in posted_jobs, "job1 should be POSTED")
+	assert_true(job3 in posted_jobs, "job3 should be POSTED")
+
+	# Check IN_PROGRESS jobs
+	var in_progress_jobs: Array[Job] = DebugCommands.get_jobs_by_state(Job.JobState.IN_PROGRESS)
+	assert_eq(in_progress_jobs.size(), 1, "Should have 1 IN_PROGRESS job")
+	assert_true(job2 in in_progress_jobs, "job2 should be IN_PROGRESS")
+
+	# Check COMPLETED jobs (none yet)
+	var completed_jobs: Array[Job] = DebugCommands.get_jobs_by_state(Job.JobState.COMPLETED)
+	assert_eq(completed_jobs.size(), 0, "Should have 0 COMPLETED jobs")
+
+	# Interrupt job2
+	DebugCommands.interrupt_job(job2)
+
+	# Check INTERRUPTED jobs
+	var interrupted_jobs: Array[Job] = DebugCommands.get_jobs_by_state(Job.JobState.INTERRUPTED)
+	assert_eq(interrupted_jobs.size(), 1, "Should have 1 INTERRUPTED job")
+	assert_true(job2 in interrupted_jobs, "job2 should be INTERRUPTED")
+
+	# Cleanup
+	JobBoard.clear_all_jobs()
+	DebugCommands.clear_runtime_npcs()

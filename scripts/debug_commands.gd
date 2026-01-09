@@ -736,3 +736,68 @@ func get_npc_motive(npc: Node, motive_name: String) -> float:
 
 	# Convert from internal -100..+100 to user-friendly 0..100
 	return (internal_value + 100.0) / 2.0
+
+
+# =============================================================================
+# JOB MANAGEMENT (US-005)
+# =============================================================================
+
+# Signals for job management
+signal job_posted_debug(job: Job)
+signal job_interrupted_debug(job: Job)
+
+
+## Post a new job by loading a recipe from a resource path
+## recipe_path: Path to the recipe resource (e.g., "res://resources/recipes/cook_simple_meal.tres")
+## Returns the created Job, or null if recipe could not be loaded
+func post_job(recipe_path: String) -> Job:
+	if recipe_path.is_empty():
+		push_error("DebugCommands.post_job: recipe_path cannot be empty")
+		return null
+
+	# Load the recipe resource
+	var recipe: Recipe = load(recipe_path) as Recipe
+	if recipe == null:
+		push_error("DebugCommands.post_job: Could not load recipe from '" + recipe_path + "'")
+		return null
+
+	# Post the job via JobBoard
+	var job: Job = JobBoard.post_job(recipe)
+	if job == null:
+		push_error("DebugCommands.post_job: JobBoard.post_job returned null")
+		return null
+
+	# Emit debug signal
+	job_posted_debug.emit(job)
+
+	return job
+
+
+## Interrupt an in-progress job
+## job: The Job to interrupt
+## Returns true if job was interrupted, false otherwise
+func interrupt_job(job: Job) -> bool:
+	if job == null:
+		push_error("DebugCommands.interrupt_job: job is null")
+		return false
+
+	# Delegate to JobBoard
+	var result: bool = JobBoard.interrupt_job(job)
+
+	if result:
+		job_interrupted_debug.emit(job)
+
+	return result
+
+
+## Get all jobs from the JobBoard
+## Returns array of all jobs in any state
+func get_all_jobs() -> Array[Job]:
+	return JobBoard.jobs.duplicate()
+
+
+## Get jobs filtered by state
+## state: The JobState to filter by (e.g., Job.JobState.POSTED)
+## Returns array of jobs matching the specified state
+func get_jobs_by_state(state: Job.JobState) -> Array[Job]:
+	return JobBoard.get_jobs_by_state(state)
