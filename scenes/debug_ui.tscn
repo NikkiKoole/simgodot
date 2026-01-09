@@ -18,47 +18,51 @@ grow_horizontal = 0
 grow_vertical = 2
 mouse_filter = 1
 
-[node name="MarginContainer" type="MarginContainer" parent="SidePanel"]
+[node name="ScrollContainer" type="ScrollContainer" parent="SidePanel"]
 layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="MarginContainer" type="MarginContainer" parent="SidePanel/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/margin_left = 8
 theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 8
 theme_override_constants/margin_bottom = 8
 
-[node name="VBoxContainer" type="VBoxContainer" parent="SidePanel/MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="SidePanel/ScrollContainer/MarginContainer"]
 layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
-[node name="InspectorLabel" type="Label" parent="SidePanel/MarginContainer/VBoxContainer"]
+[node name="InspectorLabel" type="Label" parent="SidePanel/ScrollContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
 text = "INSPECTOR"
 horizontal_alignment = 1
 
-[node name="InspectorSection" type="VBoxContainer" parent="SidePanel/MarginContainer/VBoxContainer"]
+[node name="InspectorSection" type="VBoxContainer" parent="SidePanel/ScrollContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
-size_flags_vertical = 3
 theme_override_constants/separation = 4
 
-[node name="PlaceholderLabel" type="Label" parent="SidePanel/MarginContainer/VBoxContainer/InspectorSection"]
+[node name="PlaceholderLabel" type="Label" parent="SidePanel/ScrollContainer/MarginContainer/VBoxContainer/InspectorSection"]
 layout_mode = 2
 text = "Select an entity to inspect"
 horizontal_alignment = 1
 autowrap_mode = 2
 
-[node name="HSeparator" type="HSeparator" parent="SidePanel/MarginContainer/VBoxContainer"]
+[node name="HSeparator" type="HSeparator" parent="SidePanel/ScrollContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="ToolsLabel" type="Label" parent="SidePanel/MarginContainer/VBoxContainer"]
+[node name="ToolsLabel" type="Label" parent="SidePanel/ScrollContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
 text = "TOOLS"
 horizontal_alignment = 1
 
-[node name="ToolsSection" type="VBoxContainer" parent="SidePanel/MarginContainer/VBoxContainer"]
+[node name="ToolsSection" type="VBoxContainer" parent="SidePanel/ScrollContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
-size_flags_vertical = 3
 theme_override_constants/separation = 4
 
-[node name="PlaceholderLabel" type="Label" parent="SidePanel/MarginContainer/VBoxContainer/ToolsSection"]
+[node name="PlaceholderLabel" type="Label" parent="SidePanel/ScrollContainer/MarginContainer/VBoxContainer/ToolsSection"]
 layout_mode = 2
 text = "Spawn and debug tools"
 horizontal_alignment = 1

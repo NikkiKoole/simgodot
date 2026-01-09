@@ -13,8 +13,8 @@ const ContainerInspectorScene = preload("res://scenes/container_inspector.tscn")
 const SpawnToolsScene = preload("res://scenes/spawn_tools.tscn")
 
 # References to UI sections for child scripts to access
-@onready var inspector_section: VBoxContainer = $SidePanel/MarginContainer/VBoxContainer/InspectorSection
-@onready var tools_section: VBoxContainer = $SidePanel/MarginContainer/VBoxContainer/ToolsSection
+@onready var inspector_section: VBoxContainer = $SidePanel/ScrollContainer/MarginContainer/VBoxContainer/InspectorSection
+@onready var tools_section: VBoxContainer = $SidePanel/ScrollContainer/MarginContainer/VBoxContainer/ToolsSection
 @onready var job_panel: PanelContainer = $JobPanel
 
 # Inspector panels - instantiated on demand
