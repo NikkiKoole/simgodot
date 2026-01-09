@@ -84,3 +84,27 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Use "level" group to find Level node for spawning, with fallback to current_scene root
 
 ---
+
+## 2026-01-09 - US-003
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented spawn_station(type, position, tags) in DebugCommands
+- Supports 8 station types: counter, stove, sink, couch, fridge, toilet, tv, generic
+- Position snaps to configurable grid (default 32px)
+- Each station type has distinct color for visual differentiation
+- Implemented remove_station(station) for runtime-spawned stations only
+- Added station_spawned and station_removed signals
+- Added runtime_stations tracking array with get_runtime_stations() and clear_runtime_stations()
+- Added 9 new tests covering all station spawning scenarios (49 new assertions)
+- All 12 test suites pass (842 total assertions)
+
+**Files changed:**
+- scripts/debug_commands.gd (added spawn_station, remove_station, grid snapping, station type validation)
+- scripts/tests/test_debug_commands.gd (added 9 station spawning tests)
+
+**Learnings for future iterations:**
+- Track runtime-spawned entities separately to allow cleanup without affecting scene-authored entities
+- Grid snapping uses round() for proper centering on grid cells
+- Station visual differentiation via ColorRect color makes debug spawned stations easy to identify
+- The `tags` parameter in spawn_station is accepted but station_tag is used as primary identifier (stations use single tag, not array)
+
+---

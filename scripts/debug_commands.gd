@@ -10,10 +10,13 @@ signal entity_deselected()
 signal item_spawned(item: ItemEntity)
 signal station_spawned(station: Station)
 signal station_removed(station: Station)
+signal npc_spawned(npc: Node)
+signal motive_changed(npc: Node, motive_name: String, old_value: float, new_value: float)
 
 # Scenes for spawning entities
 const ItemEntityScene = preload("res://scenes/objects/item_entity.tscn")
 const StationScene = preload("res://scenes/objects/station.tscn")
+const NPCScene = preload("res://scenes/npc.tscn")
 
 # Grid size for snapping station positions (in pixels)
 const GRID_SIZE: int = 32
@@ -23,6 +26,9 @@ var selected_entity: Node = null
 
 # Track runtime-spawned stations for cleanup
 var runtime_stations: Array[Station] = []
+
+# Track runtime-spawned NPCs for cleanup
+var runtime_npcs: Array[Node] = []
 
 
 func _ready() -> void:
@@ -538,3 +544,195 @@ func clear_runtime_stations() -> void:
 			station_removed.emit(station)
 			station.queue_free()
 	runtime_stations.clear()
+
+
+# =============================================================================
+# NPC SPAWNING AND MOTIVE ADJUSTMENT (US-004)
+# =============================================================================
+
+## Valid motive names that can be adjusted
+const VALID_MOTIVE_NAMES: Array[String] = [
+	"hunger", "energy", "bladder", "hygiene", "fun"
+]
+
+## Motive name to MotiveType enum mapping
+const MOTIVE_NAME_TO_TYPE: Dictionary = {
+	"hunger": Motive.MotiveType.HUNGER,
+	"energy": Motive.MotiveType.ENERGY,
+	"bladder": Motive.MotiveType.BLADDER,
+	"hygiene": Motive.MotiveType.HYGIENE,
+	"fun": Motive.MotiveType.FUN
+}
+
+
+## Spawn an NPC at a position with optional initial motives
+## position: World position for the NPC
+## motives_dict: Optional dictionary of motive values {motive_name: value}
+##               If not provided, defaults to full motives (100 for all)
+## Returns the spawned NPC, or null if spawning failed
+func spawn_npc(position: Vector2, motives_dict: Dictionary = {}) -> Node:
+	# Create the NPC instance
+	var npc: Node = NPCScene.instantiate()
+
+	# Add to scene tree
+	var level: Node = _get_level_node()
+	if level == null:
+		push_error("DebugCommands.spawn_npc: Could not find Level node")
+		npc.queue_free()
+		return null
+
+	level.add_child(npc)
+	npc.global_position = position
+
+	# Wait for NPC to initialize (motives are created in _ready)
+	# We need to set motives after the NPC is in the tree
+	if npc.get("motives") != null and npc.motives != null:
+		# Set motives - either from provided dict or default to full
+		if motives_dict.is_empty():
+			# Default to full motives (100 for all)
+			_set_all_motives_to_value(npc, 100.0)
+		else:
+			# Set provided motives, default others to 100
+			_set_all_motives_to_value(npc, 100.0)
+			for motive_name in motives_dict:
+				var value: float = motives_dict[motive_name]
+				_set_motive_internal(npc, motive_name, value)
+
+	# Track as runtime-spawned NPC
+	runtime_npcs.append(npc)
+
+	# Emit signal
+	npc_spawned.emit(npc)
+
+	return npc
+
+
+## Set a single motive for an NPC
+## npc: The NPC node
+## motive_name: Name of the motive (hunger, energy, bladder, hygiene, fun)
+## value: New value for the motive (will be clamped to 0-100 range, mapped to -100 to +100 internal)
+## Returns true if successful, false otherwise
+func set_npc_motive(npc: Node, motive_name: String, value: float) -> bool:
+	if npc == null:
+		push_error("DebugCommands.set_npc_motive: npc is null")
+		return false
+
+	if not is_instance_valid(npc):
+		push_error("DebugCommands.set_npc_motive: npc is not a valid instance")
+		return false
+
+	if npc.get("motives") == null or npc.motives == null:
+		push_error("DebugCommands.set_npc_motive: npc does not have motives")
+		return false
+
+	var lower_name: String = motive_name.to_lower()
+	if lower_name not in VALID_MOTIVE_NAMES:
+		push_error("DebugCommands.set_npc_motive: Invalid motive name '" + motive_name + "'. Valid names: " + str(VALID_MOTIVE_NAMES))
+		return false
+
+	return _set_motive_internal(npc, lower_name, value)
+
+
+## Set multiple motives for an NPC at once
+## npc: The NPC node
+## motives_dict: Dictionary of {motive_name: value} pairs
+## Returns true if all motives were set successfully, false if any failed
+func set_npc_motives(npc: Node, motives_dict: Dictionary) -> bool:
+	if npc == null:
+		push_error("DebugCommands.set_npc_motives: npc is null")
+		return false
+
+	if not is_instance_valid(npc):
+		push_error("DebugCommands.set_npc_motives: npc is not a valid instance")
+		return false
+
+	if npc.get("motives") == null or npc.motives == null:
+		push_error("DebugCommands.set_npc_motives: npc does not have motives")
+		return false
+
+	var all_success: bool = true
+	for motive_name in motives_dict:
+		var value: float = motives_dict[motive_name]
+		if not _set_motive_internal(npc, motive_name.to_lower(), value):
+			all_success = false
+
+	return all_success
+
+
+## Internal helper to set a motive value and emit signal
+## value is in 0-100 range (user-friendly), converted to -100 to +100 internal range
+func _set_motive_internal(npc: Node, motive_name: String, value: float) -> bool:
+	if not MOTIVE_NAME_TO_TYPE.has(motive_name):
+		push_error("DebugCommands._set_motive_internal: Unknown motive '" + motive_name + "'")
+		return false
+
+	var motive_type: Motive.MotiveType = MOTIVE_NAME_TO_TYPE[motive_name]
+	var motives: Motive = npc.motives
+
+	# Clamp value to 0-100 range and convert to internal -100 to +100 range
+	# User provides 0-100 where 0 = critical need, 100 = fully satisfied
+	# Internal uses -100 to +100 where -100 = critical, +100 = satisfied
+	var clamped_value: float = clampf(value, 0.0, 100.0)
+	var internal_value: float = (clamped_value * 2.0) - 100.0  # 0->-100, 50->0, 100->+100
+
+	# Get old value for signal (convert back to 0-100 range for consistency)
+	var old_internal: float = motives.get_value(motive_type)
+	var old_value: float = (old_internal + 100.0) / 2.0  # Convert -100..+100 to 0..100
+
+	# Set the new value directly in the motives dictionary
+	motives.values[motive_type] = internal_value
+
+	# Emit signal with 0-100 range values
+	motive_changed.emit(npc, motive_name, old_value, clamped_value)
+
+	return true
+
+
+## Internal helper to set all motives to a specific value
+func _set_all_motives_to_value(npc: Node, value: float) -> void:
+	if npc.get("motives") == null or npc.motives == null:
+		return
+
+	for motive_name in VALID_MOTIVE_NAMES:
+		_set_motive_internal(npc, motive_name, value)
+
+
+## Get all runtime-spawned NPCs
+func get_runtime_npcs() -> Array[Node]:
+	# Clean up any freed NPCs from the list
+	var valid_npcs: Array[Node] = []
+	for npc in runtime_npcs:
+		if is_instance_valid(npc):
+			valid_npcs.append(npc)
+	runtime_npcs = valid_npcs
+	return runtime_npcs.duplicate()
+
+
+## Remove all runtime-spawned NPCs
+func clear_runtime_npcs() -> void:
+	# Iterate in reverse to safely remove while iterating
+	for i in range(runtime_npcs.size() - 1, -1, -1):
+		var npc: Node = runtime_npcs[i]
+		if is_instance_valid(npc):
+			npc.queue_free()
+	runtime_npcs.clear()
+
+
+## Get motive value for an NPC in user-friendly 0-100 range
+## Returns -1 if invalid
+func get_npc_motive(npc: Node, motive_name: String) -> float:
+	if npc == null or not is_instance_valid(npc):
+		return -1.0
+
+	if npc.get("motives") == null or npc.motives == null:
+		return -1.0
+
+	var lower_name: String = motive_name.to_lower()
+	if not MOTIVE_NAME_TO_TYPE.has(lower_name):
+		return -1.0
+
+	var motive_type: Motive.MotiveType = MOTIVE_NAME_TO_TYPE[lower_name]
+	var internal_value: float = npc.motives.get_value(motive_type)
+
+	# Convert from internal -100..+100 to user-friendly 0..100
+	return (internal_value + 100.0) / 2.0

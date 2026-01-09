@@ -55,7 +55,7 @@
         "Project runs without errors"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Use existing station.tscn as base, configure via tags"
     },
     {

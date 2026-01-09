@@ -47,6 +47,18 @@ func run_tests() -> void:
 	await test_get_runtime_stations()
 	await test_clear_runtime_stations()
 
+	# US-004: NPC spawning and motive adjustment tests
+	await test_spawn_npc_default_motives()
+	await test_spawn_npc_custom_motives()
+	await test_spawn_npc_signal()
+	await test_set_npc_motive()
+	await test_set_npc_motive_clamping()
+	await test_set_npc_motive_signal()
+	await test_set_npc_motives_batch()
+	await test_set_npc_motive_invalid_name()
+	await test_get_runtime_npcs()
+	await test_clear_runtime_npcs()
+
 	_log_summary()
 
 
@@ -634,3 +646,312 @@ func test_clear_runtime_stations() -> void:
 	assert_eq(DebugCommands.get_runtime_stations().size(), 0, "Should have 0 runtime stations after clear")
 	assert_false(is_instance_valid(station1), "station1 should be freed")
 	assert_false(is_instance_valid(station2), "station2 should be freed")
+
+
+# =============================================================================
+# US-004: NPC Spawning and Motive Adjustment Tests
+# =============================================================================
+
+func test_spawn_npc_default_motives() -> void:
+	test("spawn_npc with no motives_dict defaults to full motives")
+
+	# Clear any existing runtime NPCs
+	DebugCommands.clear_runtime_npcs()
+
+	var spawn_position := Vector2(100, 100)
+	var npc: Node = DebugCommands.spawn_npc(spawn_position)
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	assert_not_null(npc, "spawn_npc should return an NPC")
+	assert_true(is_instance_valid(npc), "NPC should be valid")
+	assert_not_null(npc.get_parent(), "NPC should have a parent")
+
+	# Check position
+	assert_eq(npc.global_position, spawn_position, "NPC should be at spawn position")
+
+	# Check all motives are at 100 (full)
+	var hunger: float = DebugCommands.get_npc_motive(npc, "hunger")
+	var energy: float = DebugCommands.get_npc_motive(npc, "energy")
+	var bladder: float = DebugCommands.get_npc_motive(npc, "bladder")
+	var hygiene: float = DebugCommands.get_npc_motive(npc, "hygiene")
+	var fun: float = DebugCommands.get_npc_motive(npc, "fun")
+
+	assert_eq(hunger, 100.0, "Hunger should be 100 (full)")
+	assert_eq(energy, 100.0, "Energy should be 100 (full)")
+	assert_eq(bladder, 100.0, "Bladder should be 100 (full)")
+	assert_eq(hygiene, 100.0, "Hygiene should be 100 (full)")
+	assert_eq(fun, 100.0, "Fun should be 100 (full)")
+
+	# Cleanup
+	DebugCommands.clear_runtime_npcs()
+
+
+func test_spawn_npc_custom_motives() -> void:
+	test("spawn_npc with motives_dict sets specified motives")
+
+	DebugCommands.clear_runtime_npcs()
+
+	var spawn_position := Vector2(200, 200)
+	var custom_motives := {
+		"hunger": 20.0,  # Low hunger (hungry)
+		"energy": 80.0,  # High energy
+		"bladder": 50.0  # Medium bladder
+	}
+
+	var npc: Node = DebugCommands.spawn_npc(spawn_position, custom_motives)
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	assert_not_null(npc, "spawn_npc should return an NPC")
+
+	# Check custom motives are set correctly
+	var hunger: float = DebugCommands.get_npc_motive(npc, "hunger")
+	var energy: float = DebugCommands.get_npc_motive(npc, "energy")
+	var bladder: float = DebugCommands.get_npc_motive(npc, "bladder")
+	var hygiene: float = DebugCommands.get_npc_motive(npc, "hygiene")
+	var fun: float = DebugCommands.get_npc_motive(npc, "fun")
+
+	assert_eq(hunger, 20.0, "Hunger should be 20")
+	assert_eq(energy, 80.0, "Energy should be 80")
+	assert_eq(bladder, 50.0, "Bladder should be 50")
+	# Unspecified motives should default to 100
+	assert_eq(hygiene, 100.0, "Hygiene should default to 100")
+	assert_eq(fun, 100.0, "Fun should default to 100")
+
+	# Cleanup
+	DebugCommands.clear_runtime_npcs()
+
+
+func test_spawn_npc_signal() -> void:
+	test("spawn_npc emits npc_spawned signal")
+
+	DebugCommands.clear_runtime_npcs()
+
+	var signal_data: Array = [false, null]
+
+	var callback := func(spawned_npc: Node) -> void:
+		signal_data[0] = true
+		signal_data[1] = spawned_npc
+
+	DebugCommands.npc_spawned.connect(callback)
+
+	var npc: Node = DebugCommands.spawn_npc(Vector2(50, 50))
+
+	await get_tree().process_frame
+
+	assert_true(signal_data[0], "npc_spawned signal should be emitted")
+	assert_eq(signal_data[1], npc, "Signal should pass the spawned NPC")
+
+	# Cleanup
+	DebugCommands.npc_spawned.disconnect(callback)
+	DebugCommands.clear_runtime_npcs()
+
+
+func test_set_npc_motive() -> void:
+	test("set_npc_motive changes individual motive value")
+
+	DebugCommands.clear_runtime_npcs()
+
+	var npc: Node = DebugCommands.spawn_npc(Vector2(100, 100))
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# Set hunger to low value
+	var result: bool = DebugCommands.set_npc_motive(npc, "hunger", 10.0)
+	assert_true(result, "set_npc_motive should return true")
+
+	var hunger: float = DebugCommands.get_npc_motive(npc, "hunger")
+	assert_eq(hunger, 10.0, "Hunger should be 10 after setting")
+
+	# Other motives should be unchanged
+	var energy: float = DebugCommands.get_npc_motive(npc, "energy")
+	assert_eq(energy, 100.0, "Energy should still be 100")
+
+	# Test case-insensitivity
+	var result2: bool = DebugCommands.set_npc_motive(npc, "ENERGY", 75.0)
+	assert_true(result2, "set_npc_motive should work with uppercase")
+
+	var energy2: float = DebugCommands.get_npc_motive(npc, "energy")
+	assert_eq(energy2, 75.0, "Energy should be 75 after setting")
+
+	# Cleanup
+	DebugCommands.clear_runtime_npcs()
+
+
+func test_set_npc_motive_clamping() -> void:
+	test("set_npc_motive clamps values to 0-100 range")
+
+	DebugCommands.clear_runtime_npcs()
+
+	var npc: Node = DebugCommands.spawn_npc(Vector2(100, 100))
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# Test value above 100 gets clamped
+	DebugCommands.set_npc_motive(npc, "hunger", 150.0)
+	var hunger: float = DebugCommands.get_npc_motive(npc, "hunger")
+	assert_eq(hunger, 100.0, "Hunger should be clamped to 100")
+
+	# Test value below 0 gets clamped
+	DebugCommands.set_npc_motive(npc, "energy", -50.0)
+	var energy: float = DebugCommands.get_npc_motive(npc, "energy")
+	assert_eq(energy, 0.0, "Energy should be clamped to 0")
+
+	# Test boundary values
+	DebugCommands.set_npc_motive(npc, "bladder", 0.0)
+	var bladder: float = DebugCommands.get_npc_motive(npc, "bladder")
+	assert_eq(bladder, 0.0, "Bladder should be exactly 0")
+
+	DebugCommands.set_npc_motive(npc, "hygiene", 100.0)
+	var hygiene: float = DebugCommands.get_npc_motive(npc, "hygiene")
+	assert_eq(hygiene, 100.0, "Hygiene should be exactly 100")
+
+	# Cleanup
+	DebugCommands.clear_runtime_npcs()
+
+
+func test_set_npc_motive_signal() -> void:
+	test("set_npc_motive emits motive_changed signal")
+
+	DebugCommands.clear_runtime_npcs()
+
+	var npc: Node = DebugCommands.spawn_npc(Vector2(100, 100))
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var signal_data: Array = [false, null, "", 0.0, 0.0]
+
+	var callback := func(changed_npc: Node, motive_name: String, old_value: float, new_value: float) -> void:
+		signal_data[0] = true
+		signal_data[1] = changed_npc
+		signal_data[2] = motive_name
+		signal_data[3] = old_value
+		signal_data[4] = new_value
+
+	DebugCommands.motive_changed.connect(callback)
+
+	# Change hunger from 100 to 25
+	DebugCommands.set_npc_motive(npc, "hunger", 25.0)
+
+	assert_true(signal_data[0], "motive_changed signal should be emitted")
+	assert_eq(signal_data[1], npc, "Signal should pass the NPC")
+	assert_eq(signal_data[2], "hunger", "Signal should pass motive name")
+	assert_eq(signal_data[3], 100.0, "Signal should pass old value (100)")
+	assert_eq(signal_data[4], 25.0, "Signal should pass new value (25)")
+
+	# Cleanup
+	DebugCommands.motive_changed.disconnect(callback)
+	DebugCommands.clear_runtime_npcs()
+
+
+func test_set_npc_motives_batch() -> void:
+	test("set_npc_motives changes multiple motives at once")
+
+	DebugCommands.clear_runtime_npcs()
+
+	var npc: Node = DebugCommands.spawn_npc(Vector2(100, 100))
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var motives_to_set := {
+		"hunger": 15.0,
+		"energy": 30.0,
+		"bladder": 45.0,
+		"hygiene": 60.0,
+		"fun": 75.0
+	}
+
+	var result: bool = DebugCommands.set_npc_motives(npc, motives_to_set)
+	assert_true(result, "set_npc_motives should return true")
+
+	# Verify all motives were set
+	assert_eq(DebugCommands.get_npc_motive(npc, "hunger"), 15.0, "Hunger should be 15")
+	assert_eq(DebugCommands.get_npc_motive(npc, "energy"), 30.0, "Energy should be 30")
+	assert_eq(DebugCommands.get_npc_motive(npc, "bladder"), 45.0, "Bladder should be 45")
+	assert_eq(DebugCommands.get_npc_motive(npc, "hygiene"), 60.0, "Hygiene should be 60")
+	assert_eq(DebugCommands.get_npc_motive(npc, "fun"), 75.0, "Fun should be 75")
+
+	# Cleanup
+	DebugCommands.clear_runtime_npcs()
+
+
+func test_set_npc_motive_invalid_name() -> void:
+	test("set_npc_motive returns false for invalid motive name")
+
+	DebugCommands.clear_runtime_npcs()
+
+	var npc: Node = DebugCommands.spawn_npc(Vector2(100, 100))
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# Invalid motive name
+	var result: bool = DebugCommands.set_npc_motive(npc, "invalid_motive", 50.0)
+	assert_false(result, "set_npc_motive should return false for invalid motive")
+
+	# Empty motive name
+	var result2: bool = DebugCommands.set_npc_motive(npc, "", 50.0)
+	assert_false(result2, "set_npc_motive should return false for empty motive name")
+
+	# Null NPC
+	var result3: bool = DebugCommands.set_npc_motive(null, "hunger", 50.0)
+	assert_false(result3, "set_npc_motive should return false for null NPC")
+
+	# Cleanup
+	DebugCommands.clear_runtime_npcs()
+
+
+func test_get_runtime_npcs() -> void:
+	test("get_runtime_npcs returns all spawned NPCs")
+
+	DebugCommands.clear_runtime_npcs()
+
+	await get_tree().process_frame
+
+	# Spawn some NPCs
+	var npc1: Node = DebugCommands.spawn_npc(Vector2(0, 0))
+	var npc2: Node = DebugCommands.spawn_npc(Vector2(100, 0))
+	var npc3: Node = DebugCommands.spawn_npc(Vector2(200, 0))
+
+	await get_tree().process_frame
+
+	var runtime_npcs: Array[Node] = DebugCommands.get_runtime_npcs()
+
+	assert_eq(runtime_npcs.size(), 3, "Should have 3 runtime NPCs")
+	assert_true(npc1 in runtime_npcs, "npc1 should be in runtime NPCs")
+	assert_true(npc2 in runtime_npcs, "npc2 should be in runtime NPCs")
+	assert_true(npc3 in runtime_npcs, "npc3 should be in runtime NPCs")
+
+	# Cleanup
+	DebugCommands.clear_runtime_npcs()
+
+
+func test_clear_runtime_npcs() -> void:
+	test("clear_runtime_npcs removes all spawned NPCs")
+
+	DebugCommands.clear_runtime_npcs()
+
+	# Spawn some NPCs
+	var npc1: Node = DebugCommands.spawn_npc(Vector2(0, 100))
+	var npc2: Node = DebugCommands.spawn_npc(Vector2(100, 100))
+
+	await get_tree().process_frame
+
+	assert_eq(DebugCommands.get_runtime_npcs().size(), 2, "Should have 2 runtime NPCs")
+
+	# Clear all
+	DebugCommands.clear_runtime_npcs()
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	assert_eq(DebugCommands.get_runtime_npcs().size(), 0, "Should have 0 runtime NPCs after clear")
+	assert_false(is_instance_valid(npc1), "npc1 should be freed")
+	assert_false(is_instance_valid(npc2), "npc2 should be freed")
