@@ -45,18 +45,22 @@ signal item_gathered(item: ItemEntity)
 signal job_completed()
 signal job_failed(reason: String)
 
-## Counter for generating unique IDs
+## Counter for generating unique IDs (combined with timestamp for scene-reload safety)
 static var _next_id: int = 0
+static var _session_id: int = 0
 
 func _init(p_recipe: Recipe = null, p_priority: int = 0) -> void:
 	recipe = p_recipe
 	priority = p_priority
 	job_id = _generate_id()
 
-## Generate a unique job ID
+## Generate a unique job ID using timestamp + counter for uniqueness across scene reloads
 static func _generate_id() -> String:
+	# Initialize session ID once per game session using current time
+	if _session_id == 0:
+		_session_id = Time.get_ticks_usec()
 	_next_id += 1
-	return "job_%d" % _next_id
+	return "job_%d_%d" % [_session_id, _next_id]
 
 ## Claim this job for an agent
 ## Returns true if claim successful, false if already claimed by another agent

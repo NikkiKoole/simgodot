@@ -16,6 +16,7 @@ const TILE_SIZE := 32
 @export var wiggle_strength: float = 40.0  # Random force when stuck
 
 enum State { IDLE, WALKING, WAITING, USING_OBJECT, HAULING, WORKING }
+enum PathResult { MOVING, ARRIVED, STUCK }  # Result of path-following step
 var current_state: State = State.IDLE
 var wait_timer: float = 0.0
 var is_initialized: bool = false
@@ -311,6 +312,11 @@ func _calculate_avoidance() -> Vector2:
 func _decide_next_action() -> void:
 	# Check if we have critical motives that need addressing
 	if motives.has_critical_motive():
+		# First, try to find a job that fulfills the need
+		if _try_start_job_for_needs():
+			return
+
+		# Fall back to simple InteractableObjects
 		var best_object := _find_best_object_for_needs()
 		if best_object != null:
 			_pathfind_to_object(best_object)
@@ -318,6 +324,56 @@ func _decide_next_action() -> void:
 
 	# Otherwise, just wander randomly
 	_pick_random_destination()
+
+## Try to find and claim a job that fulfills critical needs
+## Returns true if a job was started, false otherwise
+func _try_start_job_for_needs() -> bool:
+	# Get the most urgent motive
+	var urgent_motive := motives.get_most_urgent_motive()
+	var motive_name := _motive_type_to_name(urgent_motive)
+
+	if motive_name.is_empty():
+		return false
+
+	# Query JobBoard for available jobs that affect this motive
+	var job := JobBoard.get_highest_priority_job_for_motive(motive_name)
+	if job == null:
+		return false
+
+	# Check if we can actually start this job (have required items/stations)
+	var typed_containers: Array[ItemContainer] = []
+	for c in available_containers:
+		typed_containers.append(c)
+
+	var typed_stations: Array[Station] = []
+	for s in available_stations:
+		typed_stations.append(s)
+
+	var result := JobBoard.can_start_job(job, typed_containers, typed_stations)
+	if not result.can_start:
+		return false
+
+	# Claim the job
+	if not JobBoard.claim_job(job, self, typed_containers):
+		return false
+
+	# Start hauling items for the job
+	if not start_hauling_for_job(job):
+		job.release()
+		return false
+
+	return true
+
+## Convert MotiveType enum to lowercase string name for recipe matching
+func _motive_type_to_name(motive_type: Motive.MotiveType) -> String:
+	match motive_type:
+		Motive.MotiveType.HUNGER: return "hunger"
+		Motive.MotiveType.ENERGY: return "energy"
+		Motive.MotiveType.SOCIAL: return "social"
+		Motive.MotiveType.HYGIENE: return "hygiene"
+		Motive.MotiveType.BLADDER: return "bladder"
+		Motive.MotiveType.FUN: return "fun"
+		_: return ""
 
 func _find_best_object_for_needs() -> InteractableObject:
 	if available_objects.is_empty():
@@ -698,84 +754,15 @@ func _pathfind_to_container(container: ItemContainer) -> void:
 		# No path found
 		_cancel_hauling()
 
-## Follow path while in HAULING state (similar to _follow_path but handles arrival differently)
+## Follow path while in HAULING state
 func _follow_path_hauling(speed_mult: float) -> void:
-	if path_index >= current_path.size():
-		# Reached container, pick up item
-		_on_arrived_at_container()
-		return
-
-	# Use the same path following logic as WALKING state
-	var target_pos := current_path[path_index]
-	var distance := global_position.distance_to(target_pos)
-	var delta := get_physics_process_delta_time()
-
-	var move_distance := speed * speed_mult * delta
-
-	if distance <= move_distance + 2.0:
-		global_position = target_pos
-		path_index += 1
-		stuck_timer = 0.0
-		return
-
-	var desired_direction := global_position.direction_to(target_pos)
-	var avoidance := _calculate_avoidance()
-
-	if stuck_timer > stuck_threshold:
-		avoidance = Vector2.ZERO
-
-	# Check stuck progress
-	var progress_toward_goal := last_position.distance_to(target_pos) - global_position.distance_to(target_pos)
-	var expected_progress := speed * speed_mult * delta * 0.3
-
-	if progress_toward_goal < expected_progress:
-		stuck_timer += delta * speed_mult
-	else:
-		if progress_toward_goal > expected_progress * 2:
-			stuck_timer = 0.0
-			wiggle_direction = Vector2.ZERO
-		else:
-			stuck_timer = maxf(0.0, stuck_timer - delta * speed_mult * 0.5)
-
-	last_position = global_position
-
-	# Dynamic collision shrinking
-	if stuck_timer > stuck_threshold:
-		if current_collision_radius <= MIN_COLLISION_RADIUS + 0.1:
-			stuck_timer = 0.0
-			wiggle_direction = Vector2.ZERO
+	var result := _follow_path_step(speed_mult)
+	match result:
+		PathResult.ARRIVED:
+			_on_arrived_at_container()
+		PathResult.STUCK:
 			_cancel_hauling()
-			return
-		_update_collision_radius(current_collision_radius - SHRINK_RATE * delta * speed_mult)
-	elif current_collision_radius < DEFAULT_COLLISION_RADIUS:
-		_update_collision_radius(current_collision_radius + GROW_RATE * delta * speed_mult)
-
-	var wiggle := Vector2.ZERO
-	if stuck_timer > stuck_threshold:
-		if wiggle_direction == Vector2.ZERO:
-			wiggle_direction = Vector2(randf_range(-1, 1), randf_range(-1, 1)).normalized()
-		wiggle = wiggle_direction * wiggle_strength
-
-	var final_velocity := desired_direction * speed + avoidance * avoidance_strength + wiggle
-	final_velocity *= speed_mult
-
-	var max_speed := speed * speed_mult * 1.3
-	if final_velocity.length() > max_speed:
-		final_velocity = final_velocity.normalized() * max_speed
-
-	velocity = final_velocity
-
-	var max_step_distance := current_collision_radius * 0.25
-	var frame_distance := velocity.length() * delta
-
-	if frame_distance > max_step_distance and velocity.length() > 0:
-		var substeps := ceili(frame_distance / max_step_distance)
-		var substep_velocity := velocity / substeps
-		for i in substeps:
-			velocity = substep_velocity
-			move_and_slide()
-	else:
-		move_and_slide()
+		# PathResult.MOVING: continue next frame
 
 ## Called when agent arrives at the target container
 func _on_arrived_at_container() -> void:
@@ -956,6 +943,94 @@ func _try_skip_waypoints() -> void:
 				path_index = i
 			break
 
+## Common path-following logic used by HAULING and WORKING states
+## Returns PathResult indicating what happened: MOVING, ARRIVED, or STUCK
+func _follow_path_step(speed_mult: float) -> PathResult:
+	# Check if we've reached the end of the path
+	if path_index >= current_path.size():
+		return PathResult.ARRIVED
+
+	var target_pos := current_path[path_index]
+	var distance := global_position.distance_to(target_pos)
+	var delta := get_physics_process_delta_time()
+	var move_distance := speed * speed_mult * delta
+
+	# If close enough, snap to waypoint and advance
+	if distance <= move_distance + 2.0:
+		global_position = target_pos
+		path_index += 1
+		stuck_timer = 0.0
+		# Check if that was the last waypoint
+		if path_index >= current_path.size():
+			return PathResult.ARRIVED
+		return PathResult.MOVING
+
+	var desired_direction := global_position.direction_to(target_pos)
+	var avoidance := _calculate_avoidance()
+
+	# Disable avoidance when stuck to allow pushing through
+	if stuck_timer > stuck_threshold:
+		avoidance = Vector2.ZERO
+
+	# Check if making progress toward goal
+	var progress_toward_goal := last_position.distance_to(target_pos) - global_position.distance_to(target_pos)
+	var expected_progress := speed * speed_mult * delta * 0.3
+
+	if progress_toward_goal < expected_progress:
+		stuck_timer += delta * speed_mult
+	else:
+		if progress_toward_goal > expected_progress * 2:
+			stuck_timer = 0.0
+			wiggle_direction = Vector2.ZERO
+		else:
+			stuck_timer = maxf(0.0, stuck_timer - delta * speed_mult * 0.5)
+
+	last_position = global_position
+
+	# Dynamic collision shrinking when stuck
+	if stuck_timer > stuck_threshold:
+		if current_collision_radius <= MIN_COLLISION_RADIUS + 0.1:
+			# Completely stuck, give up
+			stuck_timer = 0.0
+			wiggle_direction = Vector2.ZERO
+			return PathResult.STUCK
+		_update_collision_radius(current_collision_radius - SHRINK_RATE * delta * speed_mult)
+	elif current_collision_radius < DEFAULT_COLLISION_RADIUS:
+		_update_collision_radius(current_collision_radius + GROW_RATE * delta * speed_mult)
+
+	# Add wiggle force when stuck
+	var wiggle := Vector2.ZERO
+	if stuck_timer > stuck_threshold:
+		if wiggle_direction == Vector2.ZERO:
+			wiggle_direction = Vector2(randf_range(-1, 1), randf_range(-1, 1)).normalized()
+		wiggle = wiggle_direction * wiggle_strength
+
+	# Combine movement forces
+	var final_velocity := desired_direction * speed + avoidance * avoidance_strength + wiggle
+	final_velocity *= speed_mult
+
+	# Clamp to max speed
+	var max_speed := speed * speed_mult * 1.3
+	if final_velocity.length() > max_speed:
+		final_velocity = final_velocity.normalized() * max_speed
+
+	velocity = final_velocity
+
+	# Subdivide movement to prevent tunneling
+	var max_step_distance := current_collision_radius * 0.25
+	var frame_distance := velocity.length() * delta
+
+	if frame_distance > max_step_distance and velocity.length() > 0:
+		var substeps := ceili(frame_distance / max_step_distance)
+		var substep_velocity := velocity / substeps
+		for i in substeps:
+			velocity = substep_velocity
+			move_and_slide()
+	else:
+		move_and_slide()
+
+	return PathResult.MOVING
+
 # Clamp NPC position to valid walkable area
 func _clamp_to_valid_position() -> void:
 	if astar == null:
@@ -1078,82 +1153,13 @@ func _pathfind_to_station(station: Station) -> void:
 
 ## Follow path while in WORKING state (moving to station)
 func _follow_path_working(speed_mult: float) -> void:
-	if path_index >= current_path.size():
-		# Reached station
-		_on_arrived_at_station()
-		return
-
-	# Use the same path following logic as other states
-	var target_pos := current_path[path_index]
-	var distance := global_position.distance_to(target_pos)
-	var delta := get_physics_process_delta_time()
-
-	var move_distance := speed * speed_mult * delta
-
-	if distance <= move_distance + 2.0:
-		global_position = target_pos
-		path_index += 1
-		stuck_timer = 0.0
-		return
-
-	var desired_direction := global_position.direction_to(target_pos)
-	var avoidance := _calculate_avoidance()
-
-	if stuck_timer > stuck_threshold:
-		avoidance = Vector2.ZERO
-
-	# Check stuck progress
-	var progress_toward_goal := last_position.distance_to(target_pos) - global_position.distance_to(target_pos)
-	var expected_progress := speed * speed_mult * delta * 0.3
-
-	if progress_toward_goal < expected_progress:
-		stuck_timer += delta * speed_mult
-	else:
-		if progress_toward_goal > expected_progress * 2:
-			stuck_timer = 0.0
-			wiggle_direction = Vector2.ZERO
-		else:
-			stuck_timer = maxf(0.0, stuck_timer - delta * speed_mult * 0.5)
-
-	last_position = global_position
-
-	# Dynamic collision shrinking
-	if stuck_timer > stuck_threshold:
-		if current_collision_radius <= MIN_COLLISION_RADIUS + 0.1:
-			stuck_timer = 0.0
-			wiggle_direction = Vector2.ZERO
+	var result := _follow_path_step(speed_mult)
+	match result:
+		PathResult.ARRIVED:
+			_on_arrived_at_station()
+		PathResult.STUCK:
 			_cancel_working("Got stuck while moving to station")
-			return
-		_update_collision_radius(current_collision_radius - SHRINK_RATE * delta * speed_mult)
-	elif current_collision_radius < DEFAULT_COLLISION_RADIUS:
-		_update_collision_radius(current_collision_radius + GROW_RATE * delta * speed_mult)
-
-	var wiggle := Vector2.ZERO
-	if stuck_timer > stuck_threshold:
-		if wiggle_direction == Vector2.ZERO:
-			wiggle_direction = Vector2(randf_range(-1, 1), randf_range(-1, 1)).normalized()
-		wiggle = wiggle_direction * wiggle_strength
-
-	var final_velocity := desired_direction * speed + avoidance * avoidance_strength + wiggle
-	final_velocity *= speed_mult
-
-	var max_speed := speed * speed_mult * 1.3
-	if final_velocity.length() > max_speed:
-		final_velocity = final_velocity.normalized() * max_speed
-
-	velocity = final_velocity
-
-	var max_step_distance := current_collision_radius * 0.25
-	var frame_distance := velocity.length() * delta
-
-	if frame_distance > max_step_distance and velocity.length() > 0:
-		var substeps := ceili(frame_distance / max_step_distance)
-		var substep_velocity := velocity / substeps
-		for i in substeps:
-			velocity = substep_velocity
-			move_and_slide()
-	else:
-		move_and_slide()
+		# PathResult.MOVING: continue next frame
 
 ## Called when agent arrives at the target station
 func _on_arrived_at_station() -> void:
@@ -1329,16 +1335,40 @@ func _finish_job() -> void:
 			if motive_type >= 0:
 				motives.fulfill(motive_type, effect)
 
-	# Handle consumed items - remove them
+	# Handle item cleanup: tools are preserved, everything else is consumed
+	# Tools can be identified by matching tool tags from recipe
+	# All other items (transformed inputs, outputs) are consumed for motive satisfaction
 	if current_job.recipe != null:
-		var consumed_tags := current_job.recipe.get_consumed_input_tags()
-		var items_to_remove: Array[ItemEntity] = []
+		var tool_tags := current_job.recipe.tools
+		var items_to_consume: Array[ItemEntity] = []
+		var items_to_preserve: Array[ItemEntity] = []
+
 		for item in held_items:
-			if is_instance_valid(item) and consumed_tags.has(item.item_tag):
-				items_to_remove.append(item)
-		for item in items_to_remove:
+			if not is_instance_valid(item):
+				continue
+			if tool_tags.has(item.item_tag):
+				# Tool - preserve it (drop back to world)
+				items_to_preserve.append(item)
+			else:
+				# Non-tool item - consume it
+				items_to_consume.append(item)
+
+		# Consume non-tool items
+		for item in items_to_consume:
 			remove_held_item(item)
 			item.queue_free()
+
+		# Drop tools back to world for reuse
+		for item in items_to_preserve:
+			_drop_item(item)
+	else:
+		# No recipe - just drop everything
+		var remaining := held_items.duplicate()
+		for item in remaining:
+			if is_instance_valid(item):
+				_drop_item(item)
+
+	held_items.clear()
 
 	# Release station if still reserved
 	if target_station != null:
@@ -1349,13 +1379,6 @@ func _finish_job() -> void:
 	# Complete the job
 	current_job.complete()
 	current_job = null
-
-	# Drop any remaining held items
-	var remaining_items := held_items.duplicate()
-	for item in remaining_items:
-		if is_instance_valid(item):
-			_drop_item(item)
-	held_items.clear()
 
 	current_state = State.IDLE
 

@@ -50,6 +50,8 @@ var map_width: int = 0
 var map_height: int = 0
 var astar: AStarGrid2D
 var all_objects: Array[InteractableObject] = []
+var all_containers: Array[ItemContainer] = []  # For job system
+var all_stations: Array[Station] = []  # For job system
 var game_clock: GameClock
 
 func _ready() -> void:
@@ -155,6 +157,7 @@ func _spawn_container(pos: Vector2, container_name: String = "Storage") -> ItemC
 	container.position = pos
 	container.container_name = container_name
 	add_child(container)
+	all_containers.append(container)
 	return container
 
 
@@ -172,6 +175,7 @@ func _spawn_station(pos: Vector2, station_tag: String = "counter") -> Station:
 	station.position = pos
 	station.station_tag = station_tag
 	add_child(station)
+	all_stations.append(station)
 	return station
 
 func _create_wall(pos: Vector2) -> void:
@@ -237,5 +241,9 @@ func _spawn_npcs() -> void:
 		npc.set_astar(astar)
 		npc.set_available_objects(all_objects)
 		npc.set_game_clock(game_clock)
+
+		# Give NPC access to containers and stations for job system
+		npc.set_available_containers(all_containers)
+		npc.set_available_stations(all_stations)
 
 		add_child(npc)

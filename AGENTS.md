@@ -122,10 +122,18 @@ Note: Despite the name "Godot 3.app", this is actually Godot 4.5.1.
 - `scenes/tests/` - Test scenes that run automatically on load
 
 ### Running Tests
-Tests auto-quit when run in headless mode. Run individual test scenes:
+Tests auto-quit when run in headless mode.
+
+**Run all tests at once:**
+```bash
+./run_tests.sh
+```
+
+**Run individual test scene:**
 ```bash
 "/Users/nikkikoole/Downloads/Godot 3.app/Contents/MacOS/Godot" --headless scenes/tests/test_items.tscn
 ```
+
 Exit code is 0 if all tests pass, 1 if any fail.
 
 ### Creating New Tests

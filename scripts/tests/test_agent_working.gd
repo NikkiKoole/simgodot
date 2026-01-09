@@ -28,6 +28,7 @@ func run_tests() -> void:
 	test_motive_effects_applied()
 	test_cancel_working()
 	test_is_working()
+	test_tools_preserved_on_completion()
 	_log_summary()
 
 func test_npc_has_working_state() -> void:
@@ -409,4 +410,58 @@ func test_is_working() -> void:
 	npc.current_state = npc.State.IDLE
 	assert_false(npc.is_working(), "Should not be working when IDLE")
 
+	npc.queue_free()
+
+func test_tools_preserved_on_completion() -> void:
+	test("Tools are preserved on job completion, non-tools consumed")
+
+	var npc = NPCScene.instantiate()
+	test_area.add_child(npc)
+	npc.is_initialized = true
+
+	# Create a food item (should be consumed)
+	var food_item: ItemEntity = ItemEntityScene.instantiate()
+	food_item.item_tag = "cooked_food"
+	test_area.add_child(food_item)
+
+	# Create a tool item (should be preserved)
+	var tool_item: ItemEntity = ItemEntityScene.instantiate()
+	tool_item.item_tag = "knife"
+	test_area.add_child(tool_item)
+
+	# Give items to NPC
+	npc.held_items.append(food_item)
+	npc.held_items.append(tool_item)
+	food_item.reparent(npc)
+	tool_item.reparent(npc)
+
+	# Create recipe with knife as tool
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Cooking Recipe"
+	recipe.add_input("raw_food", 1, true)  # consumed
+	recipe.add_tool("knife")  # preserved
+	var step := RecipeStep.new()
+	step.station_tag = "counter"
+	step.duration = 1.0
+	recipe.add_step(step)
+
+	var job := Job.new(recipe, 1)
+	job.claim(npc)
+	job.start()
+	npc.current_job = job
+	npc.current_state = npc.State.WORKING
+
+	# Complete the job
+	npc._finish_job()
+
+	# Food item should be consumed (queued for deletion)
+	# Note: queue_free() doesn't immediately free, so we check is_queued_for_deletion()
+	assert_true(food_item.is_queued_for_deletion(), "Food item should be queued for deletion")
+
+	# Tool should still exist and be on the ground
+	assert_true(is_instance_valid(tool_item), "Tool item should still exist")
+	assert_eq(tool_item.location, ItemEntity.ItemLocation.ON_GROUND, "Tool should be ON_GROUND")
+	assert_false(npc.held_items.has(tool_item), "Tool should not be in held_items")
+
+	tool_item.queue_free()
 	npc.queue_free()
