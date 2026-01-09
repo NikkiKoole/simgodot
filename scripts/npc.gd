@@ -311,6 +311,10 @@ func _calculate_avoidance() -> Vector2:
 	return avoidance
 
 func _decide_next_action() -> void:
+	# If we already have a job, don't start a new action - continue with current task
+	if current_job != null:
+		return
+
 	# Check if we have critical motives that need addressing
 	if motives.has_critical_motive():
 		# Try to find a job that fulfills the need

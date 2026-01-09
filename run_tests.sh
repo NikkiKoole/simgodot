@@ -21,6 +21,7 @@ TESTS=(
     "test_interruption"
     "test_debug_commands"
     "test_job_integration"
+    "test_debug_cooking_scenario"
 )
 
 total_passed=0

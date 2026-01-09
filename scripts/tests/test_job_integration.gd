@@ -1,6 +1,16 @@
 extends "res://scripts/tests/test_runner.gd"
-## Integration tests for the full job system flow
-## These tests run through actual physics frames to verify real gameplay behavior
+## LOW-LEVEL INTEGRATION TESTS for job system internals
+##
+## These tests verify specific mechanics like work timers counting down correctly.
+## They use direct instantiation and a mock AStar grid (no real level).
+##
+## For end-to-end testing with real levels, recipes, and the DebugCommands API,
+## see test_debug_cooking_scenario.gd instead.
+##
+## Tests here:
+## - test_work_timer_counts_down_over_frames: Verifies timer decreases each physics frame
+## - test_work_timer_not_instant_when_at_station: Verifies work takes time even at station
+## - test_full_job_flow_with_pathfinding: Basic haul→work flow with custom recipe
 
 const NPCScene = preload("res://scenes/npc.tscn")
 const ItemEntityScene = preload("res://scenes/objects/item_entity.tscn")

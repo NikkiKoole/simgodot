@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://test_debug_cooking"]
+
+[ext_resource type="Script" uid="uid://test_debug_cooking_script" path="res://scripts/tests/test_debug_cooking_scenario.gd" id="1_script"]
+
+[node name="TestDebugCookingScenario" type="Node2D"]
+script = ExtResource("1_script")

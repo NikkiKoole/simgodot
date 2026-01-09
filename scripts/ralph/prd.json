@@ -353,7 +353,7 @@
         "Project runs without errors"
       ],
       "priority": 20,
-      "passes": false,
+      "passes": true,
       "notes": "Integration test for full system"
     },
     {

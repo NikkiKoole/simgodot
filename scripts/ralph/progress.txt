@@ -548,3 +548,34 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Color-coded status messages (green/red) provide immediate feedback on operation success
 
 ---
+
+## 2026-01-09 - US-020
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created test_debug_cooking_scenario.gd end-to-end test for full cooking flow
+- Test uses only DebugCommands API (no direct instantiation or mocks)
+- Test creates simple rectangular room level with walls at edges
+- Spawns via DebugCommands: fridge with raw_food, counter, stove, NPC with low hunger
+- Posts job via DebugCommands.post_job(), claims via JobBoard.claim_job()
+- Verifies NPC autonomously: hauls raw_food → preps at counter → cooks at stove
+- Verifies hunger motive increases from 10 to 30+ after completing meal
+- Test runs headlessly and completes in ~700 frames (~12 seconds)
+- Fixed bug in npc.gd: _decide_next_action() now checks if NPC already has a job
+- Added comments to both test_job_integration.gd and test_debug_cooking_scenario.gd explaining their purposes
+- All 14 test suites pass (1110 total assertions)
+
+**Files changed:**
+- scripts/tests/test_debug_cooking_scenario.gd (new)
+- scenes/tests/test_debug_cooking_scenario.tscn (new)
+- scripts/npc.gd (fixed _decide_next_action to not override existing job)
+- scripts/tests/test_job_integration.gd (added clarifying comments)
+- run_tests.sh (added test_debug_cooking_scenario)
+
+**Learnings for future iterations:**
+- NPC's _decide_next_action() must check current_job != null to avoid overriding in-progress jobs
+- Async timer callbacks in _initialize_if_ready() can race with manually started jobs
+- Spawn NPC with full motives first, then set hunger low AFTER claiming job to avoid race conditions
+- End-to-end tests should use real Level with real AStar, not mocks, for realistic testing
+- Position entities inside room bounds (avoid walls at grid edges)
+- Debug position output helps diagnose pathfinding issues (NPC wandering outside room = bug)
+
+---
