@@ -98,6 +98,20 @@ func run_tests() -> void:
 	test_clear_scenario_signal()
 	await test_scenario_round_trip_complex()
 
+	# Container spawning tests
+	await test_spawn_container_basic()
+	await test_spawn_container_all_types()
+	await test_spawn_container_grid_snapping()
+	await test_spawn_container_signal()
+	test_spawn_container_invalid_type()
+	await test_spawn_container_default_allowed_tags()
+	await test_spawn_container_custom_allowed_tags()
+	await test_remove_container()
+	await test_get_runtime_containers()
+	await test_clear_runtime_containers()
+	await test_spawn_item_into_container_via_api()
+	await test_container_notifies_npcs()
+
 	_log_summary()
 
 
@@ -1741,6 +1755,269 @@ func test_save_scenario_with_walls() -> void:
 	DebugCommands.clear_scenario()
 	_destroy_mock_level()
 	_cleanup_test_scenarios()
+
+
+# ============================================================================
+# CONTAINER SPAWNING TESTS
+# ============================================================================
+
+func test_spawn_container_basic() -> void:
+	test("spawn_container creates container at position")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	var position := Vector2(128, 128)
+	var container: ItemContainer = DebugCommands.spawn_container("fridge", position)
+
+	assert_not_null(container, "Container should be created")
+	assert_eq(container.container_name, "Fridge (Debug)", "Container name should be set")
+
+	# Cleanup
+	DebugCommands.clear_runtime_containers()
+	_destroy_mock_level()
+
+
+func test_spawn_container_all_types() -> void:
+	test("spawn_container works for all valid types")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	var valid_types: Array[String] = DebugCommands.get_valid_container_types()
+	assert_eq(valid_types.size(), 6, "Should have 6 valid container types")
+
+	for container_type in valid_types:
+		var container: ItemContainer = DebugCommands.spawn_container(container_type, Vector2(100, 100))
+		assert_not_null(container, "Container of type '" + container_type + "' should be created")
+
+	assert_eq(DebugCommands.get_runtime_containers().size(), 6, "Should have 6 runtime containers")
+
+	# Cleanup
+	DebugCommands.clear_runtime_containers()
+	_destroy_mock_level()
+
+
+func test_spawn_container_grid_snapping() -> void:
+	test("spawn_container snaps position to grid")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	# Test position that's not on grid
+	var position := Vector2(145, 167)  # Should snap to (160, 160) with 32px grid
+	var container: ItemContainer = DebugCommands.spawn_container("crate", position)
+
+	assert_not_null(container, "Container should be created")
+	# Check that position was snapped (within reasonable tolerance)
+	var expected_x: float = round(145.0 / 32.0) * 32.0  # = 160
+	var expected_y: float = round(167.0 / 32.0) * 32.0  # = 160
+	assert_eq(container.global_position.x, expected_x, "X should be snapped to grid")
+	assert_eq(container.global_position.y, expected_y, "Y should be snapped to grid")
+
+	# Cleanup
+	DebugCommands.clear_runtime_containers()
+	_destroy_mock_level()
+
+
+func test_spawn_container_signal() -> void:
+	test("spawn_container emits container_spawned signal")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	var signal_received: Array = [false]
+	var received_container: Array = [null]
+
+	var callback := func(container: ItemContainer) -> void:
+		signal_received[0] = true
+		received_container[0] = container
+
+	DebugCommands.container_spawned.connect(callback)
+
+	var container: ItemContainer = DebugCommands.spawn_container("shelf", Vector2(100, 100))
+
+	assert_true(signal_received[0], "container_spawned signal should be emitted")
+	assert_eq(received_container[0], container, "Signal should contain the spawned container")
+
+	# Cleanup
+	DebugCommands.container_spawned.disconnect(callback)
+	DebugCommands.clear_runtime_containers()
+	_destroy_mock_level()
+
+
+func test_spawn_container_invalid_type() -> void:
+	test("spawn_container returns null for invalid type")
+
+	_create_mock_level()
+
+	var container: ItemContainer = DebugCommands.spawn_container("invalid_type", Vector2(100, 100))
+	assert_null(container, "Container should be null for invalid type")
+
+	container = DebugCommands.spawn_container("", Vector2(100, 100))
+	assert_null(container, "Container should be null for empty type")
+
+	# Cleanup
+	_destroy_mock_level()
+
+
+func test_spawn_container_default_allowed_tags() -> void:
+	test("spawn_container applies default allowed tags for fridge")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	var container: ItemContainer = DebugCommands.spawn_container("fridge", Vector2(100, 100))
+
+	assert_not_null(container, "Container should be created")
+	# Fridge should allow food items by default
+	assert_true(container.is_tag_allowed("raw_food"), "Fridge should allow raw_food")
+	assert_true(container.is_tag_allowed("prepped_food"), "Fridge should allow prepped_food")
+	assert_true(container.is_tag_allowed("cooked_meal"), "Fridge should allow cooked_meal")
+	# Fridge should not allow non-food items
+	assert_false(container.is_tag_allowed("toilet_paper"), "Fridge should not allow toilet_paper")
+
+	# Cleanup
+	DebugCommands.clear_runtime_containers()
+	_destroy_mock_level()
+
+
+func test_spawn_container_custom_allowed_tags() -> void:
+	test("spawn_container can use custom allowed tags")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	var custom_tags: Array = ["special_item", "another_item"]
+	var container: ItemContainer = DebugCommands.spawn_container("crate", Vector2(100, 100), custom_tags)
+
+	assert_not_null(container, "Container should be created")
+	assert_true(container.is_tag_allowed("special_item"), "Container should allow custom tag")
+	assert_true(container.is_tag_allowed("another_item"), "Container should allow second custom tag")
+	assert_false(container.is_tag_allowed("raw_food"), "Container should not allow non-custom tags")
+
+	# Cleanup
+	DebugCommands.clear_runtime_containers()
+	_destroy_mock_level()
+
+
+func test_remove_container() -> void:
+	test("remove_container removes runtime container")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	var container: ItemContainer = DebugCommands.spawn_container("bin", Vector2(100, 100))
+	assert_not_null(container, "Container should be created")
+	assert_eq(DebugCommands.get_runtime_containers().size(), 1, "Should have 1 container")
+
+	var result: bool = DebugCommands.remove_container(container)
+	assert_true(result, "remove_container should return true")
+
+	await get_tree().process_frame
+	assert_eq(DebugCommands.get_runtime_containers().size(), 0, "Should have 0 containers after removal")
+
+	# Cleanup
+	_destroy_mock_level()
+
+
+func test_get_runtime_containers() -> void:
+	test("get_runtime_containers returns all spawned containers")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	DebugCommands.spawn_container("fridge", Vector2(100, 100))
+	DebugCommands.spawn_container("crate", Vector2(200, 100))
+	DebugCommands.spawn_container("shelf", Vector2(300, 100))
+
+	var containers: Array[ItemContainer] = DebugCommands.get_runtime_containers()
+	assert_eq(containers.size(), 3, "Should have 3 runtime containers")
+
+	# Cleanup
+	DebugCommands.clear_runtime_containers()
+	_destroy_mock_level()
+
+
+func test_clear_runtime_containers() -> void:
+	test("clear_runtime_containers removes all containers")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	DebugCommands.spawn_container("fridge", Vector2(100, 100))
+	DebugCommands.spawn_container("crate", Vector2(200, 100))
+	assert_eq(DebugCommands.get_runtime_containers().size(), 2, "Should have 2 containers before clear")
+
+	DebugCommands.clear_runtime_containers()
+	await get_tree().process_frame
+
+	assert_eq(DebugCommands.get_runtime_containers().size(), 0, "Should have 0 containers after clear")
+
+	# Cleanup
+	_destroy_mock_level()
+
+
+func test_spawn_item_into_container_via_api() -> void:
+	test("spawn_item can spawn item directly into container")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	# Create a container that allows all items
+	var container: ItemContainer = DebugCommands.spawn_container("crate", Vector2(100, 100))
+	assert_not_null(container, "Container should be created")
+	assert_eq(container.get_item_count(), 0, "Container should be empty initially")
+
+	# Spawn item into container
+	var item: ItemEntity = DebugCommands.spawn_item("raw_food", container)
+
+	assert_not_null(item, "Item should be created")
+	assert_eq(container.get_item_count(), 1, "Container should have 1 item")
+	assert_eq(item.item_tag, "raw_food", "Item tag should be correct")
+
+	# Spawn another item
+	var item2: ItemEntity = DebugCommands.spawn_item("toilet_paper", container)
+	assert_not_null(item2, "Second item should be created")
+	assert_eq(container.get_item_count(), 2, "Container should have 2 items")
+
+	# Cleanup
+	DebugCommands.clear_runtime_containers()
+	DebugCommands.clear_runtime_items()
+	_destroy_mock_level()
+
+
+func test_container_notifies_npcs() -> void:
+	test("spawn_container notifies NPCs of new container")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	# Create an NPC first
+	var npc: Node = DebugCommands.spawn_npc(Vector2(100, 100))
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# Check NPC's available_containers before spawning container
+	var initial_containers: Array[ItemContainer] = []
+	if npc.get("available_containers") != null:
+		initial_containers = npc.available_containers.duplicate()
+
+	var initial_count: int = initial_containers.size()
+
+	# Spawn a container
+	var container: ItemContainer = DebugCommands.spawn_container("fridge", Vector2(200, 100))
+	await get_tree().process_frame
+
+	# Check NPC's available_containers after spawning container
+	var final_containers: Array[ItemContainer] = npc.available_containers
+	assert_eq(final_containers.size(), initial_count + 1, "NPC should have 1 more container available")
+	assert_true(container in final_containers, "NPC should know about the new container")
+
+	# Cleanup
+	DebugCommands.clear_runtime_containers()
+	DebugCommands.clear_runtime_npcs()
+	_destroy_mock_level()
 
 
 func test_save_scenario_signal() -> void:
