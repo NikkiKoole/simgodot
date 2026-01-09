@@ -1,3 +1,33 @@
+## 2026-01-09 - US-013
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented complete_job(job, agent, station) method in JobBoard
+- Added _spawn_outputs() to create output items at station output slots
+- Added _apply_motive_effects() to apply recipe motive effects to agent
+- Added _handle_item_consumption() to consume inputs and preserve tools
+- Added _get_original_tag() to trace transformed items back to original input tags
+- Added _motive_name_to_type() using Motive.MotiveType enum directly
+- Output items automatically get appropriate ItemState based on tag (cooked, prepped)
+- Added MockAgent inner class in tests for proper motives property testing
+- Added 7 comprehensive test functions with 19 new assertions:
+  - test_complete_job_basic: Verifies complete only works on IN_PROGRESS jobs
+  - test_complete_job_motive_effects: Verifies motive effects applied to agent
+  - test_complete_job_spawns_outputs: Verifies outputs spawned at station slots
+  - test_complete_job_consumes_inputs: Verifies consumed inputs are queue_free'd
+  - test_complete_job_preserves_tools: Verifies tools remain after completion
+  - test_complete_job_with_transforms: Verifies transformed items traced to original
+  - test_complete_job_invalid_states: Verifies error handling for invalid inputs
+- All tests pass: 414 assertions across all test suites (160 in test_jobboard)
+- Files changed:
+  - scripts/job_board.gd (added complete_job and helper methods)
+  - scripts/tests/test_jobboard.gd (added 7 completion tests, MockAgent class)
+- **Learnings for future iterations:**
+  - Use Motive.MotiveType enum directly instead of hardcoded integers for motive types
+  - Agent.get("motives") returns null for Node2D - need inner class with motives property
+  - Transformed items should be traced back to original tag to determine if consumed
+  - Output item state can be derived from tag patterns (cooked_, prepped_)
+  - complete_job() only works on IN_PROGRESS jobs (same pattern as interrupt_job)
+---
+
 ## 2026-01-09 - US-012
 Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Added job_interrupted signal to JobBoard
