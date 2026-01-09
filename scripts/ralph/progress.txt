@@ -1,3 +1,33 @@
+## 2026-01-09 - US-012
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Added job_interrupted signal to JobBoard
+- Implemented interrupt_job(job) method in JobBoard - only interrupts IN_PROGRESS jobs
+- Added interrupt_current_job() method to NPC for agent-side interruption handling
+- Added _drop_item_on_interrupt() helper to drop held items ON_GROUND during interruption
+- Items already in station slots remain IN_SLOT (preserved for resumption)
+- Updated start_hauling_for_job() to handle resumed interrupted jobs
+- Added _account_for_existing_items() to check station slots for items from interrupted job
+- Added _reduce_gather_requirement() to reduce gathering requirements when items already exist
+- Added 6 comprehensive test functions with 34 new assertions:
+  - test_interrupt_job: Verifies interrupt only works on IN_PROGRESS jobs
+  - test_interrupt_job_signal: Verifies job_interrupted signal emission
+  - test_interrupt_job_preserves_step_index: Verifies current_step_index preserved
+  - test_interrupted_job_claimable: Verifies INTERRUPTED jobs appear in available jobs
+  - test_interrupted_job_reservations_released: Verifies item/station reservations released
+  - test_resume_interrupted_job: Verifies agent can resume from preserved step index
+- All tests pass: 141 assertions in test_jobboard
+- Files changed:
+  - scripts/job_board.gd (added job_interrupted signal, interrupt_job method)
+  - scripts/npc.gd (added interrupt_current_job, _drop_item_on_interrupt, resume support)
+  - scripts/tests/test_jobboard.gd (added 6 interruption tests)
+- **Learnings for future iterations:**
+  - JobBoard.interrupt_job() only works on IN_PROGRESS jobs (not POSTED, CLAIMED, etc.)
+  - Job.interrupt() already handles releasing item reservations via gathered_items array
+  - When resuming interrupted job, check job.current_step_index > 0 to detect resumed jobs
+  - Items in station slots survive interruption and can be used by resuming agent
+  - Use explicit type annotations (e.g., `var interrupted: bool = ...`) for GDScript type inference
+---
+
 ## Codebase Patterns
 - This is a Godot 4.5 project using GDScript
 - When iterating over an array and modifying it, make a duplicate first to avoid skipping items
