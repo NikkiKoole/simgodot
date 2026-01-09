@@ -591,6 +591,9 @@ func spawn_npc(position: Vector2, motives_dict: Dictionary = {}) -> Node:
 	level.add_child(npc)
 	npc.global_position = position
 
+	# Initialize NPC with level data (required for NPC to be active)
+	_initialize_npc_from_level(npc, level)
+
 	# Wait for NPC to initialize (motives are created in _ready)
 	# We need to set motives after the NPC is in the tree
 	if npc.get("motives") != null and npc.motives != null:
@@ -612,6 +615,40 @@ func spawn_npc(position: Vector2, motives_dict: Dictionary = {}) -> Node:
 	npc_spawned.emit(npc)
 
 	return npc
+
+
+## Initialize an NPC with required data from the level
+## This sets up pathfinding, available objects, containers, stations, etc.
+func _initialize_npc_from_level(npc: Node, level: Node) -> void:
+	# Get AStar for pathfinding
+	if level.has_method("get_astar"):
+		var astar: AStarGrid2D = level.get_astar()
+		if astar != null and npc.has_method("set_astar"):
+			npc.set_astar(astar)
+
+	# Get walkable positions
+	if level.get("walkable_positions") != null and npc.has_method("set_walkable_positions"):
+		npc.set_walkable_positions(level.walkable_positions)
+
+	# Get wander positions (empty floor tiles for random wandering)
+	if level.get("wander_positions") != null and npc.has_method("set_wander_positions"):
+		npc.set_wander_positions(level.wander_positions)
+
+	# Get available interactable objects
+	if level.get("all_objects") != null and npc.has_method("set_available_objects"):
+		npc.set_available_objects(level.all_objects)
+
+	# Get available containers for hauling
+	if level.get("all_containers") != null and npc.has_method("set_available_containers"):
+		npc.set_available_containers(level.all_containers)
+
+	# Get available stations for working
+	if level.get("all_stations") != null and npc.has_method("set_available_stations"):
+		npc.set_available_stations(level.all_stations)
+
+	# Get game clock reference
+	if level.get("game_clock") != null and npc.has_method("set_game_clock"):
+		npc.set_game_clock(level.game_clock)
 
 
 ## Set a single motive for an NPC
