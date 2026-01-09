@@ -544,7 +544,9 @@ func start_hauling_for_job(job: Job) -> bool:
 	items_to_gather.clear()
 
 	# Check if this is a resumed interrupted job
-	var is_resumed := job.current_step_index > 0
+	# A job is considered resumed if step > 0 OR if it was previously interrupted
+	var was_interrupted := job.state == Job.JobState.INTERRUPTED or job.state == Job.JobState.CLAIMED
+	var is_resumed := job.current_step_index > 0 or was_interrupted
 
 	# Build list of items to gather from recipe inputs and tools
 	for input_data in job.recipe.inputs:
@@ -560,7 +562,7 @@ func start_hauling_for_job(job: Job) -> bool:
 	# We do NOT reduce items_to_gather here - the NPC must still fetch them.
 	# However, _find_container_with_item needs to find reserved items that belong to us.
 
-	# If resuming, check for items already at stations or on ground near work area
+	# If resuming (or was interrupted), check for items already at stations
 	if is_resumed:
 		_account_for_existing_items()
 

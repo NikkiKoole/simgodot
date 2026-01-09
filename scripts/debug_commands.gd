@@ -885,7 +885,18 @@ func interrupt_job(job: Job) -> bool:
 		push_error("DebugCommands.interrupt_job: job is null")
 		return false
 
-	# Delegate to JobBoard
+	# Get the NPC that's working on this job before interrupting
+	var npc = job.claimed_by
+
+	# If there's an NPC actively working on this job (has current_job set),
+	# use their interrupt method which properly handles dropping items, releasing stations, etc.
+	if npc != null and npc.has_method("interrupt_current_job") and npc.get("current_job") == job:
+		var result: bool = npc.interrupt_current_job()
+		if result:
+			job_interrupted_debug.emit(job)
+		return result
+
+	# Fallback: Delegate to JobBoard (for jobs where NPC isn't actively working via current_job)
 	var result: bool = JobBoard.interrupt_job(job)
 
 	if result:
