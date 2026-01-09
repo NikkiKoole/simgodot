@@ -520,3 +520,31 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - queue_redraw() in _process() provides real-time updates as NPC moves
 
 ---
+
+## 2026-01-09 - US-019
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created ScenarioTool UI panel in ToolsSection
+- Implemented 'Save Scenario' button that opens FileDialog for saving to custom path
+- Implemented 'Load Scenario' button that opens FileDialog for loading from custom path
+- Implemented 'Clear All' button that removes all runtime-spawned entities
+- Added 3 quick-save slot buttons (Slot 1, Slot 2, Slot 3) for fast saves
+- Added 3 quick-load slot buttons (Slot 1, Slot 2, Slot 3) for fast loads
+- Quick save/load uses user://scenarios/quicksave_N.json paths
+- Status label shows save/load result with color coding (green=success, red=error)
+- All operations go through DebugCommands API (save_scenario, load_scenario, clear_scenario)
+- Integrated into DebugUI via _setup_tools_section() with HSeparator
+- All 13 test suites pass (1091 total assertions)
+
+**Files changed:**
+- scripts/scenario_tool.gd (new)
+- scenes/scenario_tool.tscn (new)
+- scripts/debug_ui.gd (added ScenarioToolScene preload, scenario_tool variable, instantiation)
+
+**Learnings for future iterations:**
+- Follow established tool pattern: VBoxContainer with header label, buttons, status label
+- FileDialog with ACCESS_USERDATA restricts to user:// directory for security
+- DirAccess.make_dir_recursive_absolute() ensures save directory exists before file operations
+- Quick save slots provide faster workflow than file dialogs for iterative testing
+- Color-coded status messages (green/red) provide immediate feedback on operation success
+
+---
