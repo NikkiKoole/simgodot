@@ -87,19 +87,22 @@ func _process(_delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-			# Check if click is over UI panels - if so, don't handle
+			# Check if click is over any UI control - if so, don't handle
+			# This properly handles buttons, sliders, and other interactive elements
 			var mouse_pos: Vector2 = event.position
-			# Side panel is on right (x > viewport_width - 280)
-			# Bottom bar is at bottom (y > viewport_height - 40) but not under side panel
-			var viewport_size := get_viewport().get_visible_rect().size
-			var side_panel_x := viewport_size.x - 280
-			var bottom_bar_y := viewport_size.y - 40
 
-			# Skip if clicking on side panel
-			if mouse_pos.x > side_panel_x:
+			# Check if any control has focus or is under the mouse
+			var focused := get_viewport().gui_get_focus_owner()
+			if focused != null:
 				return
-			# Skip if clicking on bottom bar (but not under where side panel would be)
-			if mouse_pos.y > bottom_bar_y and mouse_pos.x < side_panel_x:
+
+			# Check if mouse is over any of our UI panels
+			var side_panel := get_node_or_null("SidePanel")
+			var bottom_bar_node := get_node_or_null("BottomBar")
+
+			if side_panel != null and side_panel.get_global_rect().has_point(mouse_pos):
+				return
+			if bottom_bar_node != null and bottom_bar_node.get_global_rect().has_point(mouse_pos):
 				return
 
 			_handle_click(event.global_position)
