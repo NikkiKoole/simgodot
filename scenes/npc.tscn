@@ -25,8 +25,9 @@ offset_bottom = 16.0
 color = Color(0.95, 0.45, 0.5, 1)
 
 [node name="ClickArea" type="Area2D" parent="."]
-collision_layer = 8
+collision_layer = 128
 collision_mask = 0
+monitorable = true
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="ClickArea"]
 shape = SubResource("CircleShape2D_click")

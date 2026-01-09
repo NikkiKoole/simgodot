@@ -89,6 +89,3 @@ theme_override_constants/separation = 16
 [node name="JobStatusLabel" type="Label" parent="BottomBar/MarginContainer/HBoxContainer"]
 layout_mode = 2
 text = "Jobs: 0 Posted | 0 Claimed | 0 In Progress | 0 Completed"
-
-[node name="SelectionHighlight" type="Node2D" parent="."]
-script = ExtResource("2_selection_highlight")

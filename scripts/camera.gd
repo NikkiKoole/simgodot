@@ -22,6 +22,9 @@ func _ready() -> void:
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
+		# Let left and right clicks pass through to other handlers
+		if event.button_index == MOUSE_BUTTON_LEFT or event.button_index == MOUSE_BUTTON_RIGHT:
+			return
 		# Middle mouse button for dragging
 		if event.button_index == MOUSE_BUTTON_MIDDLE:
 			if event.pressed:

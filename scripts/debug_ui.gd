@@ -8,10 +8,17 @@ extends CanvasLayer
 @onready var tools_section: VBoxContainer = $SidePanel/MarginContainer/VBoxContainer/ToolsSection
 @onready var bottom_bar: PanelContainer = $BottomBar
 @onready var job_status_label: Label = $BottomBar/MarginContainer/HBoxContainer/JobStatusLabel
-@onready var selection_highlight: Node2D = $SelectionHighlight
+
+# Selection highlight - we handle it directly in DebugUI instead of a separate node
+var selected_entity: Node2D = null
+var original_modulate: Color = Color.WHITE
+var pulse_time: float = 0.0
+const PULSE_SPEED := 4.0
+const HIGHLIGHT_TINT := Color(1.0, 1.0, 0.5, 1.0)  # Yellowish tint
 
 # Click detection collision mask (layer 8 for clickable areas, layer 2 for NPCs)
-const CLICK_COLLISION_MASK := 8 + 2  # Layer 8 (ClickArea) + Layer 2 (NPC body)
+# Collision layers are bit masks: layer N = 2^(N-1), so layer 8 = 128, layer 2 = 2
+const CLICK_COLLISION_MASK := 128 + 2  # Layer 8 (ClickArea) + Layer 2 (NPC body)
 
 # Reference to the camera for coordinate conversion
 var camera: Camera2D = null
@@ -60,9 +67,32 @@ func _find_camera_recursive(node: Node) -> Camera2D:
 	return null
 
 
-func _unhandled_input(event: InputEvent) -> void:
+func _process(delta: float) -> void:
+	# Handle selection highlight pulsing
+	if selected_entity != null and is_instance_valid(selected_entity):
+		pulse_time += delta * PULSE_SPEED
+		var pulse := lerpf(0.7, 1.0, (sin(pulse_time) + 1.0) / 2.0)
+		selected_entity.modulate = HIGHLIGHT_TINT * pulse
+
+
+func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			# Check if click is over UI panels - if so, don't handle
+			var mouse_pos: Vector2 = event.position
+			# Side panel is on right (x > viewport_width - 280)
+			# Bottom bar is at bottom (y > viewport_height - 40) but not under side panel
+			var viewport_size := get_viewport().get_visible_rect().size
+			var side_panel_x := viewport_size.x - 280
+			var bottom_bar_y := viewport_size.y - 40
+
+			# Skip if clicking on side panel
+			if mouse_pos.x > side_panel_x:
+				return
+			# Skip if clicking on bottom bar (but not under where side panel would be)
+			if mouse_pos.y > bottom_bar_y and mouse_pos.x < side_panel_x:
+				return
+
 			_handle_click(event.global_position)
 
 
@@ -70,12 +100,16 @@ func _handle_click(screen_position: Vector2) -> void:
 	# Convert screen position to world position
 	var world_position := _screen_to_world(screen_position)
 
+	print("[DebugUI] Click at screen: ", screen_position, " -> world: ", world_position)
+
 	# Find entity at this position using physics query
 	var entity := _find_entity_at_position(world_position)
 
 	if entity != null:
+		print("[DebugUI] Selected entity: ", entity.name)
 		DebugCommands.select_entity(entity)
 	else:
+		print("[DebugUI] No entity found, deselecting")
 		# Clicked empty space - deselect
 		DebugCommands.deselect_entity()
 
@@ -196,11 +230,31 @@ func _get_entity_priority(entity: Node) -> int:
 
 
 func _on_entity_selected(entity: Node) -> void:
+	# Restore previous entity's modulate
+	if selected_entity != null and is_instance_valid(selected_entity):
+		selected_entity.modulate = original_modulate
+
+	# Store new selected entity and its original modulate
+	if entity is Node2D:
+		selected_entity = entity
+		original_modulate = entity.modulate
+		pulse_time = 0.0
+		print("[DebugUI] Highlight activated for: ", entity.name)
+	else:
+		selected_entity = null
+
 	# Update inspector panel based on entity type
 	_update_inspector_placeholder(entity)
 
 
 func _on_entity_deselected() -> void:
+	# Restore previous entity's modulate
+	if selected_entity != null and is_instance_valid(selected_entity):
+		selected_entity.modulate = original_modulate
+		print("[DebugUI] Highlight deactivated for: ", selected_entity.name)
+
+	selected_entity = null
+
 	# Clear inspector panel
 	_clear_inspector_placeholder()
 

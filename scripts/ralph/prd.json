@@ -161,7 +161,7 @@
         "Project runs without errors"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Requires collision shapes on all selectable entities"
     },
     {
