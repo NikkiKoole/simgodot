@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="RecipeStep" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/recipe_step.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+station_tag = "counter"
+action = "prep"
+duration = 3.0
+animation = "chopping"
+input_transform = {
+"raw_food": "prepped_food"
+}

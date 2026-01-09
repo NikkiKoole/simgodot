@@ -14,6 +14,8 @@ TESTS=(
     "test_station"
     "test_agent_hauling"
     "test_agent_working"
+    "test_need_jobs"
+    "test_recipe_cook"
 )
 
 total_passed=0
