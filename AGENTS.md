@@ -8,6 +8,7 @@ This is a Godot 4.5 simulation game inspired by The Sims, featuring NPCs with mo
 ### GDScript Style
 - **IMPORTANT: Use spaces for indentation, NOT tabs** (tabs cause edit matching issues)
 - Use `class_name` at the top of scripts for global class registration
+- **WARNING: Never duplicate `class_name` or `extends` lines** - this causes parse errors that may not be caught by `--import` validation
 - Use type hints throughout (e.g., `var name: String = ""`)
 - Use `@export` for inspector-visible properties
 - Enums defined within classes using `enum EnumName { VALUE1, VALUE2 }`
@@ -112,10 +113,11 @@ Note: Despite the name "Godot 3.app", this is actually Godot 4.5.1.
 - `scenes/tests/` - Test scenes that run automatically on load
 
 ### Running Tests
-Run individual test scenes:
+Tests auto-quit when run in headless mode. Run individual test scenes:
 ```bash
-"/Users/nikkikoole/Downloads/Godot 3.app/Contents/MacOS/Godot" --headless --path . res://scenes/tests/test_items.tscn --quit-after 3000
+"/Users/nikkikoole/Downloads/Godot 3.app/Contents/MacOS/Godot" --headless scenes/tests/test_items.tscn
 ```
+Exit code is 0 if all tests pass, 1 if any fail.
 
 ### Creating New Tests
 1. Create a script in `scripts/tests/` extending `TestRunner`

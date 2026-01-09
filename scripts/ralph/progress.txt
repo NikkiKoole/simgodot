@@ -18,7 +18,7 @@
 - For Resource serialization, complex inner class data is stored as Array[Dictionary] with to_dict()/from_dict() conversion
 - Job class extends RefCounted (not Node2D or Resource) for lightweight state tracking objects
 - Use static var for ID counters in classes that need unique IDs (e.g., `static var _next_id: int = 0`)
-- Test scenes need to run with timeout since Godot doesn't auto-quit after tests complete
+- Test runner auto-quits in headless mode with exit code 0 (pass) or 1 (fail)
 
 ---
 
@@ -43,7 +43,8 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Use RefCounted for lightweight objects that don't need scene tree presence
   - Static variables work for class-level counters in GDScript
   - When allowing re-claim by same agent, check agent identity before state check
-  - Test scenes run indefinitely - use background process with timeout to capture output
+  - Never duplicate `class_name` or `extends` lines - causes parse errors
+  - Test runner now auto-quits in headless mode (added DisplayServer.get_name() == "headless" check)
 
 ---
 

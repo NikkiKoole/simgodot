@@ -42,6 +42,9 @@ func _log_summary() -> void:
 	print("=" .repeat(60))
 	print("")
 	all_tests_completed.emit(_tests_passed, _tests_failed)
+	# Auto-quit when running headless (e.g., from command line)
+	if DisplayServer.get_name() == "headless":
+		get_tree().quit(0 if _tests_failed == 0 else 1)
 
 
 ## Start a named test
