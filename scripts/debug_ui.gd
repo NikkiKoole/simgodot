@@ -97,11 +97,6 @@ func _input(event: InputEvent) -> void:
 			# This properly handles buttons, sliders, and other interactive elements
 			var mouse_pos: Vector2 = event.position
 
-			# Check if any control has focus or is under the mouse
-			var focused := get_viewport().gui_get_focus_owner()
-			if focused != null:
-				return
-
 			# Check if mouse is over any of our UI panels
 			var side_panel := get_node_or_null("SidePanel")
 			var bottom_bar_node := get_node_or_null("BottomBar")
@@ -110,6 +105,11 @@ func _input(event: InputEvent) -> void:
 				return
 			if bottom_bar_node != null and bottom_bar_node.get_global_rect().has_point(mouse_pos):
 				return
+
+			# Release focus from any UI control when clicking in game world
+			var focused := get_viewport().gui_get_focus_owner()
+			if focused != null:
+				focused.release_focus()
 
 			_handle_click(event.global_position)
 
