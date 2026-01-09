@@ -16,6 +16,34 @@
 - Resources directory: resources/recipes/ for recipe-related resources
 - Inner classes in GDScript use `class ClassName:` syntax within the main script
 - For Resource serialization, complex inner class data is stored as Array[Dictionary] with to_dict()/from_dict() conversion
+- Job class extends RefCounted (not Node2D or Resource) for lightweight state tracking objects
+- Use static var for ID counters in classes that need unique IDs (e.g., `static var _next_id: int = 0`)
+- Test scenes need to run with timeout since Godot doesn't auto-quit after tests complete
+
+---
+
+## 2026-01-09 - US-006
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented Job class extending RefCounted for tracking work state and progress
+- Added JobState enum: POSTED, CLAIMED, IN_PROGRESS, INTERRUPTED, COMPLETED, FAILED
+- Added properties: job_id, recipe, priority, claimed_by, current_step_index, gathered_items, target_station
+- Implemented claim/release methods with proper state validation
+- Implemented start(), interrupt(), complete(), fail() state transition methods
+- Added step tracking: advance_step(), get_current_step(), get_remaining_steps(), get_progress()
+- Added gathered items management: add_gathered_item(), remove_gathered_item(), clear_gathered_items()
+- Interruption releases item and station reservations, preserves step index
+- Created comprehensive test suite with 93 passing tests
+- Fixed duplicate class_name in recipe_step.gd discovered during testing
+- Files changed:
+  - scripts/job.gd (new)
+  - scripts/tests/test_job.gd (new)
+  - scenes/tests/test_job.tscn (new)
+  - scripts/recipe_step.gd (fixed duplicate class_name)
+- **Learnings for future iterations:**
+  - Use RefCounted for lightweight objects that don't need scene tree presence
+  - Static variables work for class-level counters in GDScript
+  - When allowing re-claim by same agent, check agent identity before state check
+  - Test scenes run indefinitely - use background process with timeout to capture output
 
 ---
 
