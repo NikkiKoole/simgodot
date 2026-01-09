@@ -1,3 +1,38 @@
+## 2026-01-09 - US-015
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created cook_simple_meal.tres Recipe resource for full cooking sequence
+- Created step_prep.tres RecipeStep: counter/prep/3s with raw_food -> prepped_food transform
+- Created step_cook.tres RecipeStep: stove/cook/5s with prepped_food -> cooked_meal transform
+- Recipe inputs: 1x raw_food (consumed)
+- Recipe outputs: 1x cooked_meal
+- Recipe motive effects: {hunger: 50}
+- Created comprehensive test_recipe_cook.gd with 10 test functions and 42 assertions:
+  - test_recipe_loads_correctly: Verifies recipe loads from .tres file
+  - test_recipe_has_correct_inputs: Verifies 1x raw_food consumed
+  - test_recipe_has_correct_steps: Verifies 2 steps (counter/prep/3s, stove/cook/5s)
+  - test_recipe_has_correct_outputs: Verifies 1x cooked_meal output
+  - test_recipe_has_correct_motive_effects: Verifies hunger: 50 effect
+  - test_step_transforms: Verifies raw_food -> prepped_food -> cooked_meal chain
+  - test_full_cooking_sequence_setup: Verifies job can be created with recipe
+  - test_prep_step_transforms_raw_to_prepped: Verifies prep step transforms item
+  - test_cook_step_transforms_prepped_to_cooked: Verifies cook step transforms item
+  - test_agent_can_execute_full_sequence: Verifies full sequence with motive effects
+- Added test_recipe_cook to run_tests.sh
+- All tests pass: 519 assertions across 8 test suites
+- Files changed:
+  - resources/recipes/cook_simple_meal.tres (new)
+  - resources/recipes/step_prep.tres (new)
+  - resources/recipes/step_cook.tres (new)
+  - scripts/tests/test_recipe_cook.gd (new)
+  - scenes/tests/test_recipe_cook.tscn (new)
+  - run_tests.sh (added test_need_jobs and test_recipe_cook)
+- **Learnings for future iterations:**
+  - Recipe steps reference RecipeStep resources via ExtResource in .tres files
+  - Use Motive.fulfill() to add motive value (not add_value)
+  - Item transforms chain through steps: raw_food -> prepped_food -> cooked_meal
+  - ItemState automatically updates based on tag patterns (cooked_, prepped_)
+---
+
 ## 2026-01-09 - US-014
 Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Created RecipeRegistry singleton for storing and querying available recipes
