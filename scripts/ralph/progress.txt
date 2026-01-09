@@ -1,3 +1,38 @@
+## 2026-01-09 - US-018
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created comprehensive test_interruption.gd with 8 test functions and 59 assertions:
+  - test_interrupt_after_prep_items_at_station: Verifies items stay in station slot after interrupt
+  - test_interrupt_while_holding_items_drops_on_ground: Verifies held items dropped ON_GROUND
+  - test_job_shows_interrupted_in_jobboard: Verifies job state is INTERRUPTED in JobBoard
+  - test_interrupted_job_preserves_step_index: Verifies current_step_index is preserved
+  - test_second_agent_can_claim_interrupted_job: Verifies second agent can claim interrupted job
+  - test_second_agent_resumes_from_interrupted_step: Verifies resume starts from preserved step
+  - test_second_agent_completes_cooking_from_interrupted_step: Verifies second agent finishes cooking
+  - test_full_interruption_and_resume_sequence: Comprehensive end-to-end interruption test
+- All tests verify cooking recipe interruption scenarios:
+  - Agent 1 starts cooking, completes prep step (raw_food -> prepped_food)
+  - Agent 1 is interrupted mid-cooking (after prep, before cook complete)
+  - Prepped food remains at counter station slot (not lost)
+  - Job shows INTERRUPTED state with step_index=1 preserved
+  - Agent 2 can claim the interrupted job
+  - Agent 2 resumes from step 1 (cook at stove), not step 0
+  - Agent 2 completes cooking (prepped_food -> cooked_meal)
+  - Agent 2 receives hunger motive effect
+- Added test_interruption to run_tests.sh
+- All tests pass: 686 assertions across 11 test suites
+- Files changed:
+  - scripts/tests/test_interruption.gd (new)
+  - scenes/tests/test_interruption.tscn (new)
+  - run_tests.sh (added test_interruption)
+- **Learnings for future iterations:**
+  - Use explicit type annotations for bool returns from methods (e.g., `var interrupted: bool = ...`)
+  - Items in station slots survive interruption (IN_SLOT location)
+  - Items held by agent are dropped ON_GROUND during interruption
+  - Job.interrupt() releases reservations but preserves step_index
+  - INTERRUPTED jobs are claimable by other agents via is_claimable()
+  - When resuming, the new agent continues from job.current_step_index
+---
+
 ## 2026-01-09 - US-017
 Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Created watch_tv.tres Recipe resource for full TV watching sequence
