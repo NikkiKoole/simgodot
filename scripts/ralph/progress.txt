@@ -1,3 +1,38 @@
+## 2026-01-09 - US-014
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created RecipeRegistry singleton for storing and querying available recipes
+- Added RecipeRegistry as autoload in project.godot
+- Implemented get_recipes_for_motive(), get_best_recipe_for_motive(), has_recipe_for_motive()
+- Updated NPC._try_start_job_for_needs() to automatically post jobs when no suitable job exists
+- Added _try_post_job_for_motive() to find best executable recipe and post job
+- Added _calculate_job_priority_for_motive() to set priority based on motive urgency
+- Priority formula: priority = (100 - motive_value) / 2 (range 0-100)
+- Selects best recipe that can actually be executed (has required items/stations)
+- Added 9 comprehensive test functions with 39 passing assertions:
+  - test_recipe_registry_creation: Verifies registry creation
+  - test_register_recipe: Verifies recipe registration and deduplication
+  - test_get_recipes_for_motive: Verifies motive-based recipe queries
+  - test_get_best_recipe_for_motive: Verifies highest-effect recipe selection
+  - test_has_recipe_for_motive: Verifies motive recipe existence checks
+  - test_automatic_job_posting_when_need_critical: Verifies auto-posting when need critical
+  - test_job_priority_based_on_urgency: Verifies priority calculation at different motive levels
+  - test_no_duplicate_jobs_posted: Verifies existing jobs are found before posting new ones
+  - test_best_executable_recipe_selected: Verifies best executable recipe is chosen
+- All tests pass: 39 assertions in test_need_jobs
+- Files changed:
+  - scripts/recipe_registry.gd (new)
+  - scripts/npc.gd (added automatic job posting methods)
+  - scripts/tests/test_need_jobs.gd (new)
+  - scenes/tests/test_need_jobs.tscn (new)
+  - project.godot (added RecipeRegistry autoload)
+- **Learnings for future iterations:**
+  - RecipeRegistry is an autoload singleton like JobBoard
+  - Job priority formula: (100 - motive_value) / 2, giving -100 motive = 100 priority
+  - When posting jobs for needs, check if recipe can actually be executed first
+  - Use JobBoard.can_start_job() with temp job to validate recipe requirements
+  - NPC should check for existing available jobs before posting new ones
+---
+
 ## 2026-01-09 - US-013
 Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Implemented complete_job(job, agent, station) method in JobBoard
