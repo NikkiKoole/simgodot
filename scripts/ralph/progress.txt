@@ -1,0 +1,33 @@
+## Codebase Patterns
+
+- Use GDScript explicit type annotations for variables assigned from function returns (e.g., `var x: bool = func()`) to avoid type inference errors
+- Use `is_instance_valid(node)` instead of `node != null` for null checks - handles both null and freed nodes
+- Test files follow pattern: `test_*.gd` with matching `test_*.tscn` scene
+- Stations use tags array for recipe matching (e.g., ["counter"], ["stove", "cooking"])
+- Items track location via LocationState enum: ON_GROUND, IN_CONTAINER, AT_STATION, HELD_BY_NPC
+- Jobs track progress via current_step_index through recipe steps array
+- JobBoard is autoload singleton for global job management
+- Recipes are .tres Resource files in resources/recipes/
+- DebugCommands will be the API layer - all debug functionality flows through it for testability
+
+---
+
+## 2026-01-09 - PRD Created
+
+- Created prd.json with 21 user stories for Debug & Testing UI system
+- User stories organized in 4 phases:
+  - Phase 1 (US-001 to US-007): DebugCommands API - testable foundation
+  - Phase 2 (US-008 to US-013): Visual UI framework and inspectors
+  - Phase 3 (US-014 to US-016): Spawn and manipulation tools
+  - Phase 4 (US-017 to US-021): Visualizations and integration tests
+- Key architectural decision: DebugCommands singleton as API layer enables headless testing
+- Gap analysis included: need counter, stove, sink, couch stations (use generic station.tscn with tags)
+- Required items: raw_food, toilet_paper, remote, cooked_meal, prepped_food
+
+**Learnings for future iterations:**
+- Build API layer first (DebugCommands) before visual UI
+- All spawn/manipulation operations should emit signals for UI updates
+- Scenario save/load enables repeatable test setups
+- ~80% of debug functionality can be tested headlessly through API
+
+---
