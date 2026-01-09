@@ -1,0 +1,68 @@
+[gd_scene load_steps=2 format=3 uid="uid://station_inspector01"]
+
+[ext_resource type="Script" path="res://scripts/station_inspector.gd" id="1_station_inspector"]
+
+[node name="StationInspector" type="VBoxContainer"]
+script = ExtResource("1_station_inspector")
+theme_override_constants/separation = 4
+
+[node name="NameLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Station Name"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="TagsLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Tags:"
+
+[node name="TagsContainer" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="TagInputRow" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="TagInput" type="LineEdit" parent="TagInputRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Add tag..."
+
+[node name="AddTagButton" type="Button" parent="TagInputRow"]
+layout_mode = 2
+text = "Add"
+
+[node name="SuggestionsLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Quick Add:"
+
+[node name="SuggestionsScroll" type="ScrollContainer" parent="."]
+layout_mode = 2
+vertical_scroll_mode = 0
+
+[node name="SuggestionsContainer" type="HBoxContainer" parent="SuggestionsScroll"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HSeparator2" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="CurrentUserLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Status: Available"
+
+[node name="CapacityLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Capacity: 0/0 slots"
+
+[node name="HSeparator3" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="InputSlotsContainer" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="OutputSlotsContainer" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 2

@@ -5,6 +5,7 @@ extends CanvasLayer
 
 # Preload inspector scenes
 const NPCInspectorScene = preload("res://scenes/npc_inspector.tscn")
+const StationInspectorScene = preload("res://scenes/station_inspector.tscn")
 
 # References to UI sections for child scripts to access
 @onready var inspector_section: VBoxContainer = $SidePanel/MarginContainer/VBoxContainer/InspectorSection
@@ -14,6 +15,7 @@ const NPCInspectorScene = preload("res://scenes/npc_inspector.tscn")
 
 # Inspector panels - instantiated on demand
 var npc_inspector: Node = null
+var station_inspector: Node = null
 
 # Selection outline - drawn as rectangle around selected entity
 var selected_entity: Node2D = null
@@ -354,6 +356,8 @@ func _update_inspector_for_entity(entity: Node) -> void:
 	match entity_type:
 		"npc":
 			_show_npc_inspector(entity)
+		"station":
+			_show_station_inspector(entity)
 		_:
 			# For other entity types, show placeholder for now
 			_clear_all_inspectors()
@@ -377,10 +381,27 @@ func _show_npc_inspector(npc: Node) -> void:
 	npc_inspector.visible = true
 
 
+## Show the Station inspector panel for the given Station
+func _show_station_inspector(station: Node) -> void:
+	# Hide other inspectors
+	_hide_all_inspectors()
+
+	# Create Station inspector if it doesn't exist
+	if station_inspector == null:
+		station_inspector = StationInspectorScene.instantiate()
+		inspector_section.add_child(station_inspector)
+
+	# Set the Station to inspect
+	station_inspector.set_station(station)
+	station_inspector.visible = true
+
+
 ## Hide all inspector panels
 func _hide_all_inspectors() -> void:
 	if npc_inspector != null:
 		npc_inspector.visible = false
+	if station_inspector != null:
+		station_inspector.visible = false
 
 
 ## Clear all inspectors and show placeholder
@@ -391,6 +412,8 @@ func _clear_all_inspectors() -> void:
 	# Clear inspector data
 	if npc_inspector != null:
 		npc_inspector.clear()
+	if station_inspector != null:
+		station_inspector.clear()
 
 	# Show placeholder
 	var placeholder := inspector_section.get_node_or_null("PlaceholderLabel")

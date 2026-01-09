@@ -311,3 +311,31 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Motive value conversion: display = (internal + 100) / 2, internal = (display * 2) - 100
 
 ---
+
+## 2026-01-09 - US-011
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created StationInspector panel that displays when a Station is selected
+- Displays station name centered at top
+- Displays current tag with remove button (click "tag ×" to remove)
+- Provides tag input field with "Add" button for adding new tags
+- Shows 10 quick-add suggestion buttons: counter, stove, sink, seating, fridge, toilet, tv, cooking, prep, storage
+- Displays current user status: "Status: Available" or "In Use By: [NPC name]"
+- Displays capacity: "Capacity: X/Y slots" showing used vs total slots
+- Displays input slots with index and item tag (or "(empty)")
+- Displays output slots with index and item tag (or "(empty)")
+- Panel updates in real-time via _process() polling inspection data
+- Integrated into DebugUI: shows StationInspector when Station selected
+- All 12 test suites pass (1038 total assertions)
+
+**Files changed:**
+- scripts/station_inspector.gd (new)
+- scenes/station_inspector.tscn (new)
+- scripts/debug_ui.gd (added StationInspector integration, _show_station_inspector)
+
+**Learnings for future iterations:**
+- Follow same pattern as NPCInspector: set_station()/clear() methods, _process() for updates
+- Stations use single station_tag (string), not tags array - tag editing replaces the tag
+- ScrollContainer with horizontal scroll for suggestion buttons handles overflow gracefully
+- Slot displays benefit from consistent formatting: "[index] item_tag" or "[index] (empty)"
+
+---
