@@ -160,6 +160,26 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 
 ---
 
+## 2026-01-09 - US-008
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented can_start_job(job, containers, stations) method in JobBoard
+- Created JobRequirementResult inner class with can_start, reason, missing_items, missing_tools, missing_stations
+- Validates required items exist in accessible containers (using get_available_count)
+- Validates required tools are available in containers (using has_available_item)
+- Validates required stations are available (not reserved)
+- Returns detailed reason string when requirements not met
+- Added 7 comprehensive test functions with 34 new assertions
+- Files changed:
+  - scripts/job_board.gd (added can_start_job method and JobRequirementResult class)
+  - scripts/tests/test_jobboard.gd (added test_can_start_job_* tests)
+- **Learnings for future iterations:**
+  - Inner classes in autoload singletons work fine (JobRequirementResult inside job_board.gd)
+  - can_start_job takes containers and stations as parameters for flexibility
+  - ItemContainer.get_available_count() excludes reserved items automatically
+  - Station.is_available() checks if reserved_by is null
+  - Tests create helper functions (_create_container, _create_item, _create_station, _create_recipe_with_inputs) for cleaner test code
+---
+
 ## 2026-01-09 - US-001
 Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Implemented ItemEntity class extending Node2D with all required properties
