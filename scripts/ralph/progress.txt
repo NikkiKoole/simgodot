@@ -27,6 +27,43 @@
 
 ---
 
+## 2026-01-09 - US-011
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Added WORKING state (value 5) to NPC state machine enum
+- Added working state variables: available_stations, target_station, work_timer, current_animation
+- Implemented set_available_stations() for level to provide station references
+- Implemented _start_next_work_step() to find station for current recipe step and pathfind to it
+- Implemented _find_station_for_step() to locate available stations matching step's station_tag
+- Implemented _pathfind_to_station() to navigate to station's agent_footprint position
+- Implemented _follow_path_working() for movement in WORKING state (with stuck detection)
+- Implemented _on_arrived_at_station() to place items and start work timer
+- Implemented _place_items_in_station() to put held items into station input slots
+- Implemented _start_step_work() to set work_timer from step.duration and start animation
+- Implemented _do_work() main loop that handles pathfinding then work timer countdown
+- Implemented _on_step_complete() to apply transforms, advance steps, or finish job
+- Implemented _apply_step_transforms() to change item tags based on step.input_transform
+- Implemented _pick_up_items_from_station() to retrieve items from slots
+- Implemented _finish_job() to apply motive effects, consume items, and complete job
+- Implemented _cancel_working() to release resources on failure
+- Implemented _play_animation() and _stop_animation() stubs for AnimationPlayer support
+- Implemented _motive_name_to_type() to convert string motive names to MotiveType enum
+- Implemented get_work_progress() and is_working() helper methods
+- Updated _on_all_items_gathered() to transition from HAULING to WORKING state
+- Created test_agent_working.gd with 12 test functions and 38 passing assertions
+- Files changed:
+  - scripts/npc.gd (added WORKING state, ~300 lines of working state logic)
+  - scripts/tests/test_agent_working.gd (new)
+  - scenes/tests/test_agent_working.tscn (new)
+- **Learnings for future iterations:**
+  - WORKING state handles both pathfinding to station AND executing work at station
+  - Items are placed in station input slots on arrival, picked up before leaving
+  - Step transforms change item.item_tag and also update item.state based on tag patterns
+  - Motive effects use string keys in recipe (e.g., "hunger") converted to MotiveType enum
+  - Job completion consumes items matching recipe.get_consumed_input_tags()
+  - When testing functions that return nullable types, use explicit type annotations (e.g., `var found: Station = ...`)
+  - The _do_work() function first checks if still pathfinding, then counts down work timer
+---
+
 ## 2026-01-09 - US-009
 Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Extended JobBoard.claim_job() to accept optional containers parameter for auto-reserving items
