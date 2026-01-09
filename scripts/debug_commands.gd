@@ -7,6 +7,10 @@ extends Node
 # Signals for UI updates and testing
 signal entity_selected(entity: Node)
 signal entity_deselected()
+signal item_spawned(item: ItemEntity)
+
+# Scene for spawning items
+const ItemEntityScene = preload("res://scenes/objects/item_entity.tscn")
 
 # Currently selected entity
 var selected_entity: Node = null
@@ -251,3 +255,126 @@ func _get_container_inspection_data(container: Node) -> Dictionary:
 		"used": items_list.size()
 	}
 	return data
+
+
+# =============================================================================
+# ITEM SPAWNING (US-002)
+# =============================================================================
+
+## Spawn an item with the given tag at a position or into a target (Container/Station)
+## position_or_target can be:
+##   - Vector2: spawns item ON_GROUND at that world position
+##   - ItemContainer: spawns item IN_CONTAINER
+##   - Station: spawns item in the first available input slot
+## Returns the spawned ItemEntity, or null if spawning failed
+func spawn_item(tag: String, position_or_target: Variant) -> ItemEntity:
+	if tag.is_empty():
+		push_error("DebugCommands.spawn_item: tag cannot be empty")
+		return null
+
+	# Create the item instance
+	var item: ItemEntity = ItemEntityScene.instantiate()
+	item.item_tag = tag
+
+	# Handle based on target type
+	if position_or_target is Vector2:
+		return _spawn_item_on_ground(item, position_or_target)
+	elif position_or_target is ItemContainer:
+		return _spawn_item_in_container(item, position_or_target)
+	elif position_or_target is Station:
+		return _spawn_item_at_station(item, position_or_target)
+	else:
+		push_error("DebugCommands.spawn_item: position_or_target must be Vector2, ItemContainer, or Station")
+		item.queue_free()
+		return null
+
+
+## Spawn an item on the ground at a world position
+func _spawn_item_on_ground(item: ItemEntity, world_position: Vector2) -> ItemEntity:
+	# Add to scene tree - find Level node or use root
+	var level: Node = _get_level_node()
+	if level == null:
+		push_error("DebugCommands.spawn_item: Could not find Level node")
+		item.queue_free()
+		return null
+
+	level.add_child(item)
+	item.global_position = world_position
+	item.set_location(ItemEntity.ItemLocation.ON_GROUND)
+
+	item_spawned.emit(item)
+	return item
+
+
+## Spawn an item inside a container
+func _spawn_item_in_container(item: ItemEntity, container: ItemContainer) -> ItemEntity:
+	# Check if container has space and allows this tag
+	if not container.has_space():
+		push_error("DebugCommands.spawn_item: Container is full")
+		item.queue_free()
+		return null
+
+	if not container.is_tag_allowed(item.item_tag):
+		push_error("DebugCommands.spawn_item: Container does not allow tag '" + item.item_tag + "'")
+		item.queue_free()
+		return null
+
+	# Add item to scene tree first (container.add_item will reparent it)
+	var level: Node = _get_level_node()
+	if level == null:
+		push_error("DebugCommands.spawn_item: Could not find Level node")
+		item.queue_free()
+		return null
+
+	level.add_child(item)
+
+	# Add to container (this sets location to IN_CONTAINER and reparents)
+	var success: bool = container.add_item(item)
+	if not success:
+		push_error("DebugCommands.spawn_item: Failed to add item to container")
+		item.queue_free()
+		return null
+
+	item_spawned.emit(item)
+	return item
+
+
+## Spawn an item at a station's first available input slot
+func _spawn_item_at_station(item: ItemEntity, station: Station) -> ItemEntity:
+	# Find first empty input slot
+	var slot_index: int = station.find_empty_input_slot()
+	if slot_index == -1:
+		push_error("DebugCommands.spawn_item: Station has no empty input slots")
+		item.queue_free()
+		return null
+
+	# Add item to scene tree first (station.place_input_item will reparent it)
+	var level: Node = _get_level_node()
+	if level == null:
+		push_error("DebugCommands.spawn_item: Could not find Level node")
+		item.queue_free()
+		return null
+
+	level.add_child(item)
+
+	# Place in station slot (this sets location to IN_SLOT and reparents)
+	var success: bool = station.place_input_item(item, slot_index)
+	if not success:
+		push_error("DebugCommands.spawn_item: Failed to place item in station slot")
+		item.queue_free()
+		return null
+
+	item_spawned.emit(item)
+	return item
+
+
+## Get the Level node for adding spawned entities
+## Returns the first node in "level" group, or falls back to current scene root
+func _get_level_node() -> Node:
+	var levels: Array[Node] = get_tree().get_nodes_in_group("level")
+	if levels.size() > 0:
+		return levels[0]
+
+	# Fallback to current scene root
+	var root: Node = get_tree().current_scene
+	return root

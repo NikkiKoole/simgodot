@@ -18,7 +18,7 @@
         "Project runs without errors"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Foundation for all other debug features - must be testable"
     },
     {

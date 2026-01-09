@@ -31,3 +31,32 @@
 - ~80% of debug functionality can be tested headlessly through API
 
 ---
+
+## 2026-01-09 - US-001
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented DebugCommands singleton as autoload
+- Added select_entity() with entity_selected/entity_deselected signals
+- Added get_inspection_data() returning Dictionary with type-specific properties:
+  - NPC: type, state, motives (hunger/energy/bladder/hygiene/fun), held_item, current_job
+  - Station: type, tags, slot_contents (input_slots/output_slots), current_user
+  - ItemEntity: type, item_tag, location_state, container
+  - Container: type, name, tags, items, capacity, used
+- Created test_debug_commands.gd with 46 assertions covering all inspection data types
+- Added test to run_tests.sh - all 12 test suites pass (771 total assertions)
+
+**Files changed:**
+- scripts/debug_commands.gd (new)
+- scripts/tests/test_debug_commands.gd (new)
+- scenes/tests/test_debug_commands.tscn (new)
+- project.godot (added DebugCommands autoload)
+- run_tests.sh (added test_debug_commands)
+- AGENTS.md (documented Motive is RefCounted, not Node)
+
+**Learnings for future iterations:**
+- Autoload singletons must NOT use `class_name` - causes "hides an autoload singleton" error
+- `Motive` class is `RefCounted` not `Node` - use correct type annotation
+- Container class in Godot is reserved - project uses `ItemContainer` instead
+- NPC uses `held_items` (array) not `held_item` (single)
+- Signal tests with lambdas can be tricky - verify state directly when possible
+
+---

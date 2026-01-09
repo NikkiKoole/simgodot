@@ -27,6 +27,15 @@ func run_tests() -> void:
 	await test_container_inspection_data()
 	test_unknown_entity_inspection()
 
+	# US-002: Item spawning tests
+	test_spawn_item_on_ground()
+	await test_spawn_item_in_container()
+	await test_spawn_item_at_station()
+	test_spawn_item_signal()
+	test_spawn_item_errors()
+	await test_spawn_item_container_full()
+	await test_spawn_item_station_slots_full()
+
 	_log_summary()
 
 
@@ -252,3 +261,162 @@ func test_null_entity_inspection() -> void:
 	var data: Dictionary = DebugCommands.get_inspection_data(null)
 
 	assert_eq(data.size(), 0, "Null entity should return empty dictionary")
+
+
+# =============================================================================
+# US-002: Item Spawning Tests
+# =============================================================================
+
+func test_spawn_item_on_ground() -> void:
+	test("spawn_item with Vector2 spawns item ON_GROUND")
+
+	var spawn_position := Vector2(100, 200)
+	var item: ItemEntity = DebugCommands.spawn_item("raw_food", spawn_position)
+
+	assert_not_null(item, "spawn_item should return an ItemEntity")
+	assert_eq(item.item_tag, "raw_food", "Item tag should be 'raw_food'")
+	assert_eq(item.location, ItemEntity.ItemLocation.ON_GROUND, "Item should be ON_GROUND")
+	assert_eq(item.global_position, spawn_position, "Item should be at spawn position")
+
+	# Verify item is in scene tree
+	assert_true(is_instance_valid(item), "Item should be valid")
+	assert_not_null(item.get_parent(), "Item should have a parent")
+
+	# Cleanup
+	item.queue_free()
+
+
+func test_spawn_item_in_container() -> void:
+	test("spawn_item with Container spawns item IN_CONTAINER")
+
+	var container: ItemContainer = ContainerScene.instantiate()
+	container.container_name = "Test Fridge"
+	container.capacity = 5
+	test_area.add_child(container)
+
+	await get_tree().process_frame
+
+	var item: ItemEntity = DebugCommands.spawn_item("raw_food", container)
+
+	assert_not_null(item, "spawn_item should return an ItemEntity")
+	assert_eq(item.item_tag, "raw_food", "Item tag should be 'raw_food'")
+	assert_eq(item.location, ItemEntity.ItemLocation.IN_CONTAINER, "Item should be IN_CONTAINER")
+
+	# Verify item is in the container
+	assert_eq(container.get_item_count(), 1, "Container should have 1 item")
+	var found_item: ItemEntity = container.find_item_by_tag("raw_food")
+	assert_eq(found_item, item, "Container should contain the spawned item")
+
+	# Cleanup
+	container.queue_free()
+
+
+func test_spawn_item_at_station() -> void:
+	test("spawn_item with Station spawns item in first available slot")
+
+	var station: Station = StationScene.instantiate()
+	station.station_tag = "counter"
+	test_area.add_child(station)
+
+	await get_tree().process_frame
+
+	var item: ItemEntity = DebugCommands.spawn_item("raw_food", station)
+
+	assert_not_null(item, "spawn_item should return an ItemEntity")
+	assert_eq(item.item_tag, "raw_food", "Item tag should be 'raw_food'")
+	assert_eq(item.location, ItemEntity.ItemLocation.IN_SLOT, "Item should be IN_SLOT")
+
+	# Verify item is at the station
+	var slot_item: ItemEntity = station.get_input_item(0)
+	assert_eq(slot_item, item, "Station slot 0 should contain the spawned item")
+
+	# Spawn another item - should go to next slot
+	var item2: ItemEntity = DebugCommands.spawn_item("cooked_meal", station)
+	if item2 != null:
+		var slot_item2: ItemEntity = station.get_input_item(1)
+		assert_eq(slot_item2, item2, "Station slot 1 should contain the second item")
+
+	# Cleanup
+	station.queue_free()
+
+
+func test_spawn_item_signal() -> void:
+	test("spawn_item emits item_spawned signal")
+
+	# Use array to capture values from closure (workaround for GDScript closure limitations)
+	var signal_data: Array = [false, null]  # [signal_received, received_item]
+
+	var callback := func(item: ItemEntity) -> void:
+		signal_data[0] = true
+		signal_data[1] = item
+
+	DebugCommands.item_spawned.connect(callback)
+
+	var spawn_position := Vector2(50, 50)
+	var item: ItemEntity = DebugCommands.spawn_item("toilet_paper", spawn_position)
+
+	assert_true(signal_data[0], "item_spawned signal should be emitted")
+	assert_eq(signal_data[1], item, "Signal should pass the spawned item")
+
+	# Cleanup
+	DebugCommands.item_spawned.disconnect(callback)
+	item.queue_free()
+
+
+func test_spawn_item_errors() -> void:
+	test("spawn_item handles error cases correctly")
+
+	# Empty tag should return null
+	var item1: ItemEntity = DebugCommands.spawn_item("", Vector2(0, 0))
+	assert_null(item1, "Empty tag should return null")
+
+	# Invalid target type should return null
+	var invalid_target := "not a valid target"
+	var item2: ItemEntity = DebugCommands.spawn_item("raw_food", invalid_target)
+	assert_null(item2, "Invalid target type should return null")
+
+
+func test_spawn_item_container_full() -> void:
+	test("spawn_item returns null when container is full")
+
+	var container: ItemContainer = ContainerScene.instantiate()
+	container.capacity = 1
+	test_area.add_child(container)
+
+	await get_tree().process_frame
+
+	# Fill the container
+	var item1: ItemEntity = DebugCommands.spawn_item("raw_food", container)
+	assert_not_null(item1, "First item should spawn successfully")
+
+	# Try to spawn another - should fail
+	var item2: ItemEntity = DebugCommands.spawn_item("raw_food", container)
+	assert_null(item2, "spawn_item should return null when container is full")
+
+	# Cleanup
+	container.queue_free()
+
+
+func test_spawn_item_station_slots_full() -> void:
+	test("spawn_item returns null when station slots are full")
+
+	var station: Station = StationScene.instantiate()
+	test_area.add_child(station)
+
+	await get_tree().process_frame
+
+	# Fill all input slots
+	var slot_count: int = station.get_input_slot_count()
+	var spawned_items: Array[ItemEntity] = []
+
+	for i in range(slot_count):
+		var item: ItemEntity = DebugCommands.spawn_item("raw_food", station)
+		if item != null:
+			spawned_items.append(item)
+
+	# Try to spawn one more - should fail
+	var extra_item: ItemEntity = DebugCommands.spawn_item("raw_food", station)
+	assert_null(extra_item, "spawn_item should return null when all station slots are full")
+
+	# Cleanup
+	station.queue_free()
