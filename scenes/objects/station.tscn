@@ -1,6 +1,9 @@
-[gd_scene load_steps=2 format=3 uid="uid://station001"]
+[gd_scene load_steps=3 format=3 uid="uid://station001"]
 
 [ext_resource type="Script" path="res://scripts/station.gd" id="1_station"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_click"]
+size = Vector2(48, 48)
 
 [node name="Station" type="Node2D"]
 script = ExtResource("1_station")
@@ -11,6 +14,13 @@ offset_top = -24.0
 offset_right = 24.0
 offset_bottom = 24.0
 color = Color(0.3, 0.5, 0.6, 1)
+
+[node name="ClickArea" type="Area2D" parent="."]
+collision_layer = 8
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="ClickArea"]
+shape = SubResource("RectangleShape2D_click")
 
 [node name="InputSlot0" type="Marker2D" parent="."]
 position = Vector2(-12, -12)
