@@ -56,7 +56,8 @@ func get_available_jobs_for_motive(motive_name: String) -> Array[Job]:
 
 ## Claim a job for an agent
 ## Returns true if claim successful, false otherwise
-func claim_job(job: Job, agent: Node) -> bool:
+## If containers are provided, also reserves all required items
+func claim_job(job: Job, agent: Node, containers: Array = []) -> bool:
 	if job == null or agent == null:
 		return false
 
@@ -65,8 +66,44 @@ func claim_job(job: Job, agent: Node) -> bool:
 
 	var claimed := job.claim(agent)
 	if claimed:
+		# Reserve required items from containers
+		if containers.size() > 0 and job.recipe != null:
+			_reserve_items_for_job(job, agent, containers)
 		job_claimed.emit(job, agent)
 	return claimed
+
+## Reserve all required items for a job from available containers
+func _reserve_items_for_job(job: Job, agent: Node, containers: Array) -> void:
+	var recipe: Recipe = job.recipe
+
+	# Reserve input items
+	for input_data in recipe.get_inputs():
+		var tag: String = input_data.item_tag
+		var quantity_needed: int = input_data.quantity
+		var quantity_reserved: int = 0
+
+		for container in containers:
+			if container is ItemContainer:
+				var available_items: Array[ItemEntity] = container.get_available_items_by_tag(tag)
+				for item in available_items:
+					if quantity_reserved >= quantity_needed:
+						break
+					if item.reserve_item(agent):
+						job.add_gathered_item(item)
+						quantity_reserved += 1
+				if quantity_reserved >= quantity_needed:
+					break
+
+	# Reserve tools
+	for tool_tag in recipe.tools:
+		for container in containers:
+			if container is ItemContainer:
+				var available_items: Array[ItemEntity] = container.get_available_items_by_tag(tool_tag)
+				if available_items.size() > 0:
+					var tool_item: ItemEntity = available_items[0]
+					if tool_item.reserve_item(agent):
+						job.add_gathered_item(tool_item)
+					break
 
 ## Release a job, returning it to POSTED state
 func release_job(job: Job) -> void:

@@ -26,6 +26,11 @@ func run_tests() -> void:
 	test_container_tag_filtering()
 	test_container_available_items()
 	test_container_find_by_tag()
+	test_job_claim_reserves_items()
+	test_job_release_unreserves_items()
+	test_job_complete_unreserves_items()
+	test_job_fail_unreserves_items()
+	test_job_interrupt_unreserves_items()
 
 	_log_summary()
 
@@ -295,3 +300,251 @@ func test_container_find_by_tag() -> void:
 	assert_null(not_found, "Should not find nonexistent tag")
 
 	container.queue_free()
+
+# ============================================================================
+# Job reservation tests (US-009)
+# ============================================================================
+
+func test_job_claim_reserves_items() -> void:
+	test("Job claim reserves required items")
+
+	var container: ItemContainer = ContainerScene.instantiate()
+	test_area.add_child(container)
+	container.capacity = 10
+
+	# Add required items
+	var item1: ItemEntity = ItemEntityScene.instantiate()
+	var item2: ItemEntity = ItemEntityScene.instantiate()
+	var tool_item: ItemEntity = ItemEntityScene.instantiate()
+	item1.item_tag = "raw_food"
+	item2.item_tag = "raw_food"
+	tool_item.item_tag = "knife"
+	container.add_item(item1)
+	container.add_item(item2)
+	container.add_item(tool_item)
+
+	# Create recipe requiring 2 raw_food and 1 knife tool
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Test Cooking"
+	recipe.add_input("raw_food", 2, true)
+	recipe.add_tool("knife")
+	var step := RecipeStep.new()
+	step.station_tag = "counter"
+	step.action = "work"
+	step.duration = 2.0
+	recipe.add_step(step)
+
+	# Create job and agent
+	var job := Job.new(recipe, 1)
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	# Items should not be reserved initially
+	assert_false(item1.is_reserved(), "Item1 should not be reserved initially")
+	assert_false(item2.is_reserved(), "Item2 should not be reserved initially")
+	assert_false(tool_item.is_reserved(), "Tool should not be reserved initially")
+	assert_eq(container.get_available_count("raw_food"), 2, "Should have 2 available raw_food")
+
+	# Claim job with containers
+	var claimed := job.claim(agent)
+	assert_true(claimed, "Job should be claimed")
+
+	# Manually call reservation (simulating what JobBoard does)
+	var job_board_script = preload("res://scripts/job_board.gd")
+	var board = job_board_script.new()
+	test_area.add_child(board)
+
+	# Post and claim through board
+	var posted_job := board.post_job(recipe, 1)
+	board.claim_job(posted_job, agent, [container])
+
+	# Verify items are now reserved
+	assert_true(item1.is_reserved(), "Item1 should be reserved after claim")
+	assert_true(item2.is_reserved(), "Item2 should be reserved after claim")
+	assert_true(tool_item.is_reserved(), "Tool should be reserved after claim")
+	assert_eq(container.get_available_count("raw_food"), 0, "Should have 0 available raw_food after reservation")
+
+	# Verify items are tracked in job
+	assert_eq(posted_job.gathered_items.size(), 3, "Job should have 3 gathered items")
+
+	board.queue_free()
+	container.queue_free()
+	agent.queue_free()
+
+func test_job_release_unreserves_items() -> void:
+	test("Job release unreserves items")
+
+	var container: ItemContainer = ContainerScene.instantiate()
+	test_area.add_child(container)
+	container.capacity = 10
+
+	var item: ItemEntity = ItemEntityScene.instantiate()
+	item.item_tag = "raw_food"
+	container.add_item(item)
+
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Test"
+	recipe.add_input("raw_food", 1, true)
+	var step := RecipeStep.new()
+	step.station_tag = "counter"
+	step.action = "work"
+	step.duration = 2.0
+	recipe.add_step(step)
+
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	var job_board_script = preload("res://scripts/job_board.gd")
+	var board = job_board_script.new()
+	test_area.add_child(board)
+
+	var job := board.post_job(recipe, 1)
+	board.claim_job(job, agent, [container])
+
+	# Item should be reserved
+	assert_true(item.is_reserved(), "Item should be reserved after claim")
+	assert_eq(container.get_available_count("raw_food"), 0, "No available items after claim")
+
+	# Release the job
+	board.release_job(job)
+
+	# Item should be unreserved
+	assert_false(item.is_reserved(), "Item should be unreserved after release")
+	assert_eq(container.get_available_count("raw_food"), 1, "Item available again after release")
+
+	board.queue_free()
+	container.queue_free()
+	agent.queue_free()
+
+func test_job_complete_unreserves_items() -> void:
+	test("Job completion unreserves items")
+
+	var container: ItemContainer = ContainerScene.instantiate()
+	test_area.add_child(container)
+	container.capacity = 10
+
+	var item: ItemEntity = ItemEntityScene.instantiate()
+	item.item_tag = "raw_food"
+	container.add_item(item)
+
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Test"
+	recipe.add_input("raw_food", 1, true)
+	var step := RecipeStep.new()
+	step.station_tag = "counter"
+	step.action = "work"
+	step.duration = 2.0
+	recipe.add_step(step)
+
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	var job_board_script = preload("res://scripts/job_board.gd")
+	var board = job_board_script.new()
+	test_area.add_child(board)
+
+	var job := board.post_job(recipe, 1)
+	board.claim_job(job, agent, [container])
+
+	assert_true(item.is_reserved(), "Item should be reserved after claim")
+
+	# Start and complete the job
+	job.start()
+	job.complete()
+
+	# Item should be unreserved after completion
+	assert_false(item.is_reserved(), "Item should be unreserved after completion")
+	assert_eq(container.get_available_count("raw_food"), 1, "Item available again after completion")
+
+	board.queue_free()
+	container.queue_free()
+	agent.queue_free()
+
+func test_job_fail_unreserves_items() -> void:
+	test("Job failure unreserves items")
+
+	var container: ItemContainer = ContainerScene.instantiate()
+	test_area.add_child(container)
+	container.capacity = 10
+
+	var item: ItemEntity = ItemEntityScene.instantiate()
+	item.item_tag = "raw_food"
+	container.add_item(item)
+
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Test"
+	recipe.add_input("raw_food", 1, true)
+	var step := RecipeStep.new()
+	step.station_tag = "counter"
+	step.action = "work"
+	step.duration = 2.0
+	recipe.add_step(step)
+
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	var job_board_script = preload("res://scripts/job_board.gd")
+	var board = job_board_script.new()
+	test_area.add_child(board)
+
+	var job := board.post_job(recipe, 1)
+	board.claim_job(job, agent, [container])
+
+	assert_true(item.is_reserved(), "Item should be reserved after claim")
+
+	# Start and fail the job
+	job.start()
+	job.fail("Test failure")
+
+	# Item should be unreserved after failure
+	assert_false(item.is_reserved(), "Item should be unreserved after failure")
+	assert_eq(container.get_available_count("raw_food"), 1, "Item available again after failure")
+
+	board.queue_free()
+	container.queue_free()
+	agent.queue_free()
+
+func test_job_interrupt_unreserves_items() -> void:
+	test("Job interruption unreserves items")
+
+	var container: ItemContainer = ContainerScene.instantiate()
+	test_area.add_child(container)
+	container.capacity = 10
+
+	var item: ItemEntity = ItemEntityScene.instantiate()
+	item.item_tag = "raw_food"
+	container.add_item(item)
+
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Test"
+	recipe.add_input("raw_food", 1, true)
+	var step := RecipeStep.new()
+	step.station_tag = "counter"
+	step.action = "work"
+	step.duration = 2.0
+	recipe.add_step(step)
+
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	var job_board_script = preload("res://scripts/job_board.gd")
+	var board = job_board_script.new()
+	test_area.add_child(board)
+
+	var job := board.post_job(recipe, 1)
+	board.claim_job(job, agent, [container])
+
+	assert_true(item.is_reserved(), "Item should be reserved after claim")
+
+	# Start and interrupt the job
+	job.start()
+	job.interrupt()
+
+	# Item should be unreserved after interruption
+	assert_false(item.is_reserved(), "Item should be unreserved after interruption")
+	assert_eq(container.get_available_count("raw_food"), 1, "Item available again after interruption")
+	assert_eq(job.state, Job.JobState.INTERRUPTED, "Job should be in INTERRUPTED state")
+
+	board.queue_free()
+	container.queue_free()
+	agent.queue_free()

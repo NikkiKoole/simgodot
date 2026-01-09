@@ -76,6 +76,13 @@ func claim(agent: Node) -> bool:
 
 ## Release claim on this job, returning it to POSTED state
 func release() -> void:
+	# Release item reservations
+	for item in gathered_items:
+		if item != null and is_instance_valid(item):
+			item.release_item()
+	# Release station reservation if we have one
+	if target_station != null and target_station.is_reserved_by(claimed_by):
+		target_station.release()
 	claimed_by = null
 	target_station = null
 	set_state(JobState.POSTED)
@@ -102,11 +109,25 @@ func interrupt() -> void:
 
 ## Complete this job successfully
 func complete() -> void:
+	# Release item reservations (items may be consumed or remain)
+	for item in gathered_items:
+		if item != null and is_instance_valid(item):
+			item.release_item()
+	# Release station reservation if we have one
+	if target_station != null and target_station.is_reserved_by(claimed_by):
+		target_station.release()
 	set_state(JobState.COMPLETED)
 	job_completed.emit()
 
 ## Mark this job as failed
 func fail(reason: String = "") -> void:
+	# Release item reservations
+	for item in gathered_items:
+		if item != null and is_instance_valid(item):
+			item.release_item()
+	# Release station reservation if we have one
+	if target_station != null and target_station.is_reserved_by(claimed_by):
+		target_station.release()
 	set_state(JobState.FAILED)
 	job_failed.emit(reason)
 
