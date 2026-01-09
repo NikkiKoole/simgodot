@@ -161,6 +161,13 @@ func _spawn_container(pos: Vector2, container_name: String = "Storage") -> ItemC
 	return container
 
 
+## Spawn an item at the given position
+## NOTE: Items spawned via ASCII map ('i' character) are placed ON_GROUND, not in containers.
+## This is intentional - use this for items that should be freely available in the world.
+## To add items to containers, either:
+## 1. Manually add after spawning: container.add_item(item)
+## 2. Create items directly in container via code
+## The job system will find items in containers via NPC.available_containers.
 func _spawn_item(pos: Vector2, item_tag: String = "raw_food") -> ItemEntity:
 	var item: ItemEntity = item_entity_scene.instantiate()
 	item.position = pos

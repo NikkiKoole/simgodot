@@ -3,6 +3,51 @@ extends Resource
 
 ## Defines a complete interaction sequence with inputs, steps, and outputs
 ## Recipes are data-driven definitions of multi-step tasks agents can perform
+##
+## =============================================================================
+## RECIPE RESOURCE FORMAT
+## =============================================================================
+##
+## Recipes are saved as .tres files in resources/recipes/. They define:
+## - What items are needed (inputs)
+## - What tools are required (not consumed)
+## - What steps to perform at which stations
+## - What items are produced (outputs)
+## - What motive effects occur on completion
+##
+## CREATING A NEW RECIPE:
+## 1. Create RecipeStep resources for each step (see RecipeStep class)
+## 2. Create a Recipe resource referencing those steps
+## 3. Save as .tres file in resources/recipes/
+##
+## EXAMPLE STRUCTURE (cook_simple_meal.tres):
+## ```
+## [gd_resource type="Resource" script_class="Recipe" load_steps=4 format=3]
+## [ext_resource type="Script" path="res://scripts/recipe.gd" id="1"]
+## [ext_resource type="Resource" path="res://resources/recipes/step_prep.tres" id="2"]
+## [ext_resource type="Resource" path="res://resources/recipes/step_cook.tres" id="3"]
+##
+## [resource]
+## script = ExtResource("1")
+## recipe_name = "Cook Simple Meal"
+## inputs = [{"item_tag": "raw_food", "quantity": 1, "consumed": true}]
+## tools = []
+## steps = [ExtResource("2"), ExtResource("3")]
+## outputs = [{"item_tag": "cooked_meal", "quantity": 1}]
+## motive_effects = {"hunger": 50.0}
+## ```
+##
+## MOTIVE NAMES:
+## - "hunger" - Food satisfaction
+## - "energy" - Rest/sleep
+## - "bladder" - Bathroom needs
+## - "hygiene" - Cleanliness
+## - "fun" or "entertainment" - Entertainment
+## - "social" - Social interaction
+## - "comfort" - Physical comfort
+## - "room" - Environment quality
+##
+## =============================================================================
 
 ## Inner class for recipe input requirements
 class RecipeInput:

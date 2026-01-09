@@ -33,6 +33,18 @@ const DEFAULT_COLLISION_RADIUS: float = 8.0
 const MIN_COLLISION_RADIUS: float = 1.0
 const SHRINK_RATE: float = 10.0  # Radius shrink per second when stuck (fast!)
 const GROW_RATE: float = 2.0    # Radius grow per second when moving (slow to recover)
+
+# Path-following constants
+const ARRIVAL_THRESHOLD: float = 2.0  # Distance tolerance for reaching waypoints
+const PROGRESS_TOLERANCE: float = 0.3  # Need 30% of expected speed to count as progress
+const STUCK_RECOVERY_RATE: float = 0.5  # Rate at which stuck timer decreases when moving
+const COLLISION_RADIUS_TOLERANCE: float = 0.1  # Tolerance for collision radius comparison
+const MAX_SPEED_MULTIPLIER: float = 1.3  # Allow slight overspeed when avoiding
+const SUBSTEP_DIVISOR: float = 0.25  # Fraction of collision radius for max step
+
+# Motive thresholds
+const MOTIVE_SATISFACTION_THRESHOLD: float = 90.0  # Above this, motive is satisfied
+const WANDER_MIN_DISTANCE: float = 100.0  # Minimum distance for wander target
 var current_collision_radius: float = DEFAULT_COLLISION_RADIUS
 var collision_shape: CollisionShape2D
 
@@ -198,7 +210,7 @@ func _follow_path(speed_mult: float) -> void:
 	var move_distance := speed * speed_mult * delta
 
 	# If we're close enough (or would overshoot), snap to waypoint and move to next
-	if distance <= move_distance + 2.0:
+	if distance <= move_distance + ARRIVAL_THRESHOLD:
 		# Snap to waypoint and move to next
 		global_position = target_pos
 		path_index += 1
@@ -215,7 +227,7 @@ func _follow_path(speed_mult: float) -> void:
 
 	# Check if stuck (not making meaningful progress toward goal)
 	var progress_toward_goal := last_position.distance_to(target_pos) - global_position.distance_to(target_pos)
-	var expected_progress := speed * speed_mult * delta * 0.3  # Need 30% of expected speed to count as progress
+	var expected_progress := speed * speed_mult * delta * PROGRESS_TOLERANCE
 	if progress_toward_goal < expected_progress:
 		stuck_timer += delta * speed_mult  # Scale with game speed
 	else:
@@ -224,13 +236,13 @@ func _follow_path(speed_mult: float) -> void:
 			stuck_timer = 0.0
 			wiggle_direction = Vector2.ZERO
 		else:
-			stuck_timer = maxf(0.0, stuck_timer - delta * speed_mult * 0.5)  # Scale with game speed
+			stuck_timer = maxf(0.0, stuck_timer - delta * speed_mult * STUCK_RECOVERY_RATE)  # Scale with game speed
 	last_position = global_position
 
 	# Dynamic collision shrinking/growing based on stuck state
 	if stuck_timer > stuck_threshold:
 		# Already at minimum collision and still stuck? Give up and find new route
-		if current_collision_radius <= MIN_COLLISION_RADIUS + 0.1:
+		if current_collision_radius <= MIN_COLLISION_RADIUS + COLLISION_RADIUS_TOLERANCE:
 			stuck_timer = 0.0
 			wiggle_direction = Vector2.ZERO
 			current_state = State.IDLE  # Will pick new destination
@@ -254,7 +266,7 @@ func _follow_path(speed_mult: float) -> void:
 
 	# Apply speed multiplier and clamp
 	final_velocity *= speed_mult
-	var max_speed := speed * speed_mult * 1.3  # Allow slight overspeed when avoiding
+	var max_speed := speed * speed_mult * MAX_SPEED_MULTIPLIER  # Allow slight overspeed when avoiding
 	if final_velocity.length() > max_speed:
 		final_velocity = final_velocity.normalized() * max_speed
 
@@ -262,7 +274,7 @@ func _follow_path(speed_mult: float) -> void:
 
 	# Subdivide movement when moving fast to prevent tunneling through other bodies
 	# Max safe movement per step is roughly half the collision radius
-	var max_step_distance := current_collision_radius * 0.25
+	var max_step_distance := current_collision_radius * SUBSTEP_DIVISOR
 	var frame_distance := velocity.length() * delta
 
 	if frame_distance > max_step_distance and velocity.length() > 0:
@@ -550,7 +562,7 @@ func _pick_random_destination() -> void:
 
 	# Make sure it's not too close to current position
 	var attempts := 0
-	while target.distance_to(global_position) < 100.0 and attempts < 10:
+	while target.distance_to(global_position) < WANDER_MIN_DISTANCE and attempts < 10:
 		target = wander_positions.pick_random() as Vector2
 		attempts += 1
 
@@ -618,7 +630,7 @@ func _is_motive_satisfied() -> bool:
 		return true
 	# Check if all motives this object fulfills are above 90%
 	for motive_type in target_object.advertisements:
-		if motives.get_value(motive_type) < 90.0:
+		if motives.get_value(motive_type) < MOTIVE_SATISFACTION_THRESHOLD:
 			return false
 	return true
 
@@ -866,7 +878,7 @@ func _on_arrived_at_container() -> void:
 
 ## Pick up an item from a container
 func _pick_up_item(item: ItemEntity) -> void:
-	if item == null:
+	if not is_instance_valid(item):
 		return
 
 	# Remove from container
@@ -1020,7 +1032,7 @@ func _follow_path_step(speed_mult: float) -> PathResult:
 	var move_distance := speed * speed_mult * delta
 
 	# If close enough, snap to waypoint and advance
-	if distance <= move_distance + 2.0:
+	if distance <= move_distance + ARRIVAL_THRESHOLD:
 		global_position = target_pos
 		path_index += 1
 		stuck_timer = 0.0
@@ -1053,7 +1065,7 @@ func _follow_path_step(speed_mult: float) -> PathResult:
 
 	# Dynamic collision shrinking when stuck
 	if stuck_timer > stuck_threshold:
-		if current_collision_radius <= MIN_COLLISION_RADIUS + 0.1:
+		if current_collision_radius <= MIN_COLLISION_RADIUS + COLLISION_RADIUS_TOLERANCE:
 			# Completely stuck, give up
 			stuck_timer = 0.0
 			wiggle_direction = Vector2.ZERO
@@ -1081,7 +1093,7 @@ func _follow_path_step(speed_mult: float) -> PathResult:
 	velocity = final_velocity
 
 	# Subdivide movement to prevent tunneling
-	var max_step_distance := current_collision_radius * 0.25
+	var max_step_distance := current_collision_radius * SUBSTEP_DIVISOR
 	var frame_distance := velocity.length() * delta
 
 	if frame_distance > max_step_distance and velocity.length() > 0:
@@ -1361,11 +1373,10 @@ func _apply_step_transforms(step: RecipeStep) -> void:
 			var new_tag := step.get_transformed_tag(item.item_tag)
 			item.item_tag = new_tag
 
-			# Also update state based on common patterns
-			if new_tag.contains("prepped"):
-				item.set_state(ItemEntity.ItemState.PREPPED)
-			elif new_tag.contains("cooked"):
-				item.set_state(ItemEntity.ItemState.COOKED)
+			# Update state using RecipeStep's explicit or inferred state
+			var new_state := step.get_output_state(new_tag)
+			if new_state >= 0:
+				item.set_state(new_state)
 
 ## Pick up items from station input/output slots
 func _pick_up_items_from_station() -> void:
@@ -1375,13 +1386,13 @@ func _pick_up_items_from_station() -> void:
 	# Pick up from output slots first
 	for i in range(target_station.get_output_slot_count()):
 		var item := target_station.remove_output_item(i)
-		if item != null and is_instance_valid(item):
+		if is_instance_valid(item):
 			_pick_up_item(item)
 
 	# Then input slots
 	for i in range(target_station.get_input_slot_count()):
 		var item := target_station.remove_input_item(i)
-		if item != null and is_instance_valid(item):
+		if is_instance_valid(item):
 			_pick_up_item(item)
 
 ## Complete the job successfully
@@ -1568,7 +1579,7 @@ func interrupt_current_job() -> bool:
 
 ## Drop an item during interruption (ON_GROUND, preserves position)
 func _drop_item_on_interrupt(item: ItemEntity) -> void:
-	if item == null or not is_instance_valid(item):
+	if not is_instance_valid(item):
 		return
 
 	# Remove from held items if present
