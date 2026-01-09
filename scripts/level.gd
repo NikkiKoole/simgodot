@@ -11,7 +11,7 @@ const FLOOR_COLOR := Color(0.15, 0.12, 0.1)
 
 var npc_scene: PackedScene = preload("res://scenes/npc.tscn")
 var bed_scene: PackedScene = preload("res://scenes/objects/bed.tscn")
-var fridge_scene: PackedScene = preload("res://scenes/objects/fridge.tscn")
+# Fridge removed - use container spawning via DebugCommands instead
 var toilet_scene: PackedScene = preload("res://scenes/objects/toilet.tscn")
 var shower_scene: PackedScene = preload("res://scenes/objects/shower.tscn")
 var tv_scene: PackedScene = preload("res://scenes/objects/tv.tscn")
@@ -22,12 +22,13 @@ var item_entity_scene: PackedScene = preload("res://scenes/objects/item_entity.t
 var station_scene: PackedScene = preload("res://scenes/objects/station.tscn")
 
 # ASCII map of the world - '#' = wall, ' ' = floor, 'P' = player start
-# Object markers: B=bed, F=fridge, T=toilet, S=shower, V=tv, C=computer, K=bookshelf
+# Object markers: B=bed, T=toilet, S=shower, V=tv, C=computer, K=bookshelf
 # New objects: O=container, i=item, W=station (workstation)
+# Note: Fridge (F) removed - use container spawning via DebugCommands for job system testing
 const WORLD_MAP := """
 #################
 #       #       #
-# B   B #   F   #
+# B   B #       #
 #               #
 # B   B #   O   #
 #       #       #
@@ -114,8 +115,9 @@ func _parse_and_build_world() -> void:
 					walkable_positions.append(pos)
 					# Don't add to wander_positions - NPCs shouldn't idle on objects
 				"F":
-					_spawn_object(fridge_scene, pos)
+					# Fridge removed - now just floor space
 					walkable_positions.append(pos)
+					wander_positions.append(pos)
 				"T":
 					_spawn_object(toilet_scene, pos)
 					walkable_positions.append(pos)
