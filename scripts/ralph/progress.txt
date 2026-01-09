@@ -1,0 +1,30 @@
+## Codebase Patterns
+- This is a Godot 4.5 project using GDScript
+- Use `class_name` at top of scripts for global class registration
+- Use type hints throughout (e.g., `var name: String = ""`)
+- Use `@export` for inspector-visible properties
+- Enums defined within classes using `enum EnumName { VALUE1, VALUE2 }`
+- Signals declared with typed parameters (e.g., `signal value_changed(new_value: float)`)
+- ColorRect named "Sprite2D" used for visual representation in scenes
+- Run Godot validation: `"/Users/nikkikoole/Downloads/Godot 3.app/Contents/MacOS/Godot" --headless --quit`
+
+---
+
+## 2026-01-09 - US-001
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented ItemEntity class extending Node2D with all required properties
+- Created ItemState enum (RAW, PREPPED, COOKED, DIRTY, BROKEN)
+- Created ItemLocation enum (IN_CONTAINER, IN_HAND, IN_SLOT, ON_GROUND)
+- Added reservation system with reserve_item(), release_item(), is_reserved() methods
+- Added state/location change methods with signals
+- Created item_entity.tscn scene for spawning items
+- Files changed:
+  - scripts/item_entity.gd (new)
+  - scenes/objects/item_entity.tscn (new)
+- **Learnings for future iterations:**
+  - Godot 4 uses `@export` instead of `export`
+  - Scenes use `.tscn` format with `[gd_scene]` header
+  - Scene files need `uid://` for unique identification
+  - Scripts are attached via `ExtResource` in scene files
+  - Project runs from command line with `--headless --quit` flags for validation
+---
