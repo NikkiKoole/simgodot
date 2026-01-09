@@ -1,3 +1,44 @@
+## 2026-01-09 - US-017
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created watch_tv.tres Recipe resource for full TV watching sequence
+- Created step_tv_turn_on.tres RecipeStep: tv/turn_on/1s with no transforms
+- Created step_tv_watch.tres RecipeStep: couch/watch/10s with no transforms
+- Created step_tv_turn_off.tres RecipeStep: tv/turn_off/1s with no transforms
+- Recipe inputs: none
+- Recipe tools: remote (not consumed)
+- Recipe outputs: none
+- Recipe motive effects: {fun: 40}
+- Created comprehensive test_recipe_tv.gd with 12 test functions and 63 assertions:
+  - test_recipe_loads_correctly: Verifies recipe loads from .tres file
+  - test_recipe_has_no_inputs: Verifies no inputs required
+  - test_recipe_has_correct_tools: Verifies remote tool required
+  - test_recipe_has_correct_steps: Verifies 3 steps (tv/turn_on/1s, couch/watch/10s, tv/turn_off/1s)
+  - test_recipe_has_no_outputs: Verifies no outputs
+  - test_recipe_has_correct_motive_effects: Verifies fun: 40 effect
+  - test_step_details: Verifies step animations and no transforms
+  - test_full_tv_sequence_setup: Verifies job can be created with recipe
+  - test_turn_on_step_at_tv: Verifies turn_on step at tv station
+  - test_watch_step_at_couch: Verifies watch step at couch station
+  - test_turn_off_step_at_tv: Verifies turn_off step at tv station
+  - test_agent_can_execute_full_sequence: Verifies full sequence with motive effects
+- Added test_recipe_tv to run_tests.sh
+- All tests pass: 627 assertions across 10 test suites
+- Files changed:
+  - resources/recipes/watch_tv.tres (new)
+  - resources/recipes/step_tv_turn_on.tres (new)
+  - resources/recipes/step_tv_watch.tres (new)
+  - resources/recipes/step_tv_turn_off.tres (new)
+  - scripts/tests/test_recipe_tv.gd (new)
+  - scenes/tests/test_recipe_tv.tscn (new)
+  - run_tests.sh (added test_recipe_tv)
+- **Learnings for future iterations:**
+  - Recipes can have tools without inputs (TV watching uses remote but consumes nothing)
+  - Tools are not consumed - they remain after recipe completion
+  - Multi-station sequences with return work (tv -> couch -> tv)
+  - PRD says "entertainment" but codebase uses "fun" as the motive name (MotiveType.FUN)
+  - The _motive_name_to_type() functions accept both "fun" and "entertainment" as aliases
+---
+
 ## 2026-01-09 - US-016
 Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Created use_toilet.tres Recipe resource for full toilet sequence
