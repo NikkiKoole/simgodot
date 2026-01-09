@@ -49,3 +49,10 @@ Note: Despite the name "Godot 3.app", this is actually Godot 4.5.1.
 - Physical items with ItemState (RAW, PREPPED, COOKED, DIRTY, BROKEN)
 - Location tracking with ItemLocation (IN_CONTAINER, IN_HAND, IN_SLOT, ON_GROUND)
 - Reservation system for agent claiming
+
+### Container System (`scripts/container.gd`)
+- Stores multiple ItemEntity references with capacity limits
+- Tag filtering via `allowed_tags` array (empty = allow all)
+- Key methods: `add_item()`, `remove_item()`, `find_item_by_tag()`
+- `get_available_items()` returns only unreserved items
+- Items are reparented to container when added

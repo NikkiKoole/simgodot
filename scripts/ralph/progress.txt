@@ -8,6 +8,28 @@
 - ColorRect named "Sprite2D" used for visual representation in scenes
 - Run Godot validation: `"/Users/nikkikoole/Downloads/Godot 3.app/Contents/MacOS/Godot" --headless --quit`
 
+- Container class uses typed arrays: `Array[ItemEntity]` and `Array[String]`
+
+---
+
+## 2026-01-09 - US-002
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented Container class extending Node2D for storing ItemEntity references
+- Added capacity property with has_space() check
+- Added allowed_tags array for filtering (empty = allow all)
+- Implemented add_item(), remove_item(), find_item_by_tag() methods
+- Implemented get_available_items() returning unreserved items
+- Added helper methods: get_available_items_by_tag(), has_available_item(), get_available_count()
+- Created container.tscn scene with brown ColorRect visual (32x32 pixels)
+- Files changed:
+  - scripts/container.gd (new)
+  - scenes/objects/container.tscn (new)
+- **Learnings for future iterations:**
+  - Container reparents items when added (item becomes child of container)
+  - Use typed arrays like `Array[ItemEntity]` for type safety
+  - Container uses is_tag_allowed() to validate before adding items
+  - get_available_items() filters out reserved items using item.is_reserved()
+
 ---
 
 ## 2026-01-09 - US-001
