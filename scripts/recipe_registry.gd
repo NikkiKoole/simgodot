@@ -9,7 +9,9 @@ var recipes: Array[Recipe] = []
 signal recipe_registered(recipe: Recipe)
 
 func _ready() -> void:
-	pass
+	# Auto-load recipes from the resources/recipes directory
+	var loaded := load_recipes_from_directory("res://resources/recipes")
+	print("[RecipeRegistry] Loaded ", loaded, " recipes from resources/recipes")
 
 ## Register a recipe to be available for job posting
 func register_recipe(recipe: Recipe) -> void:

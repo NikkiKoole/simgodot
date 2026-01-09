@@ -141,7 +141,7 @@ func _get_npc_held_item(npc: Node) -> String:
 ## Get the current job info for an NPC
 func _get_npc_current_job(npc: Node) -> Dictionary:
 	if npc.get("current_job") != null and is_instance_valid(npc.current_job):
-		var job: Node = npc.current_job
+		var job = npc.current_job
 		var job_data: Dictionary = {
 			"recipe_name": "",
 			"step_index": job.current_step_index if job.get("current_step_index") != null else 0,
@@ -154,7 +154,7 @@ func _get_npc_current_job(npc: Node) -> Dictionary:
 
 
 ## Get job state name
-func _get_job_state_name(job: Node) -> String:
+func _get_job_state_name(job) -> String:
 	if job.get("state") != null:
 		var state: int = job.state
 		match state:

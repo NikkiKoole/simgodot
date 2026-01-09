@@ -364,40 +364,57 @@ func _try_start_job_for_needs() -> bool:
 	for s in available_stations:
 		typed_stations.append(s)
 
+	print("[NPC ", npc_id, "] _try_start_job_for_needs: motive=", motive_name, " containers=", typed_containers.size(), " stations=", typed_stations.size())
+
 	# Query JobBoard for available jobs that affect this motive
 	var job := JobBoard.get_highest_priority_job_for_motive(motive_name)
+	print("[NPC ", npc_id, "] JobBoard returned job: ", job)
 
 	# If no job exists, try to post one from available recipes
 	if job == null:
 		job = _try_post_job_for_motive(motive_name, urgent_motive, typed_containers, typed_stations)
 		if job == null:
+			print("[NPC ", npc_id, "] Could not post job for motive: ", motive_name)
 			return false
+		print("[NPC ", npc_id, "] Posted new job: ", job.recipe.recipe_name if job.recipe else "null")
 
 	# Check if we can actually start this job (have required items/stations)
 	var result := JobBoard.can_start_job(job, typed_containers, typed_stations)
+	print("[NPC ", npc_id, "] can_start_job result: ", result)
 	if not result.can_start:
+		print("[NPC ", npc_id, "] Cannot start job: ", result.reason if result.reason else "unknown")
 		return false
 
 	# Claim the job
+	print("[NPC ", npc_id, "] Attempting to claim job...")
 	if not JobBoard.claim_job(job, self, typed_containers):
+		print("[NPC ", npc_id, "] Failed to claim job")
 		return false
+	print("[NPC ", npc_id, "] Job claimed successfully")
 
 	# Start hauling items for the job
+	print("[NPC ", npc_id, "] Starting hauling for job...")
 	if not start_hauling_for_job(job):
+		print("[NPC ", npc_id, "] Failed to start hauling, releasing job")
 		job.release()
 		return false
 
+	print("[NPC ", npc_id, "] Hauling started successfully, state=", State.keys()[current_state])
 	return true
 
 ## Try to post a new job for a motive from available recipes
 ## Returns the posted job if successful, null otherwise
 func _try_post_job_for_motive(motive_name: String, motive_type: Motive.MotiveType, containers: Array[ItemContainer], stations: Array[Station]) -> Job:
+	print("[NPC ", npc_id, "] _try_post_job_for_motive: ", motive_name)
+
 	# Check if RecipeRegistry has any recipes for this motive
 	if not RecipeRegistry.has_recipe_for_motive(motive_name):
+		print("[NPC ", npc_id, "]   No recipes in registry for motive: ", motive_name)
 		return null
 
 	# Get all recipes that fulfill this motive
 	var matching_recipes := RecipeRegistry.get_recipes_for_motive(motive_name)
+	print("[NPC ", npc_id, "]   Found ", matching_recipes.size(), " matching recipes")
 	if matching_recipes.is_empty():
 		return null
 
@@ -406,9 +423,11 @@ func _try_post_job_for_motive(motive_name: String, motive_type: Motive.MotiveTyp
 	var best_effect: float = 0.0
 
 	for recipe in matching_recipes:
+		print("[NPC ", npc_id, "]   Checking recipe: ", recipe.recipe_name)
 		# Check if we have the requirements for this recipe
 		var temp_job := Job.new(recipe, 0)
 		var can_start := JobBoard.can_start_job(temp_job, containers, stations)
+		print("[NPC ", npc_id, "]     can_start=", can_start.can_start, " reason=", can_start.reason if can_start.reason else "ok")
 
 		if can_start.can_start:
 			var effect := recipe.get_motive_effect(motive_name)
@@ -417,6 +436,7 @@ func _try_post_job_for_motive(motive_name: String, motive_type: Motive.MotiveTyp
 				best_recipe = recipe
 
 	if best_recipe == null:
+		print("[NPC ", npc_id, "]   No recipe met requirements")
 		return null
 
 	# Calculate priority based on need urgency
@@ -721,6 +741,12 @@ func start_hauling_for_job(job: Job) -> bool:
 	for tool_tag in job.recipe.tools:
 		items_to_gather.append({"tag": tool_tag, "quantity": 1})
 
+	# Note: Items may be reserved for this job (from claim_job) but they're still
+	# in containers. The NPC needs to physically go pick them up.
+	# The reservation just prevents other NPCs from taking them.
+	# We do NOT reduce items_to_gather here - the NPC must still fetch them.
+	# However, _find_container_with_item needs to find reserved items that belong to us.
+
 	# If resuming, check for items already at stations or on ground near work area
 	if is_resumed:
 		_account_for_existing_items()
@@ -791,10 +817,47 @@ func _start_gathering_next_item() -> bool:
 	return true
 
 ## Find a container that has an available item with the given tag
+## Also considers items reserved by this NPC for the current job
 func _find_container_with_item(tag: String) -> ItemContainer:
+	print("[NPC ", npc_id, "] Looking for container with '", tag, "' in ", available_containers.size(), " containers")
 	for container in available_containers:
+		var item_count := container.get_item_count() if container.has_method("get_item_count") else -1
+		var available_count := container.get_available_count(tag) if container.has_method("get_available_count") else -1
+		print("[NPC ", npc_id, "]   Checking container: ", container.container_name, " total_items=", item_count, " available_", tag, "=", available_count)
+
+		# Check for unreserved items
 		if container.has_available_item(tag):
 			return container
+
+		# Also check for items reserved by us (for current job)
+		if current_job != null:
+			var all_items = container.get_all_items() if container.has_method("get_all_items") else []
+			for item in all_items:
+				if item.item_tag == tag and item.is_reserved() and item.reserved_by == self:
+					print("[NPC ", npc_id, "]   Found item reserved by us: ", item.item_tag)
+					return container
+
+	print("[NPC ", npc_id, "] No container found with '", tag, "'")
+	return null
+
+## Find an item in a container that we can pick up
+## Prefers items reserved by us, then unreserved items
+func _find_item_in_container(container: ItemContainer, tag: String) -> ItemEntity:
+	if container == null:
+		return null
+
+	var all_items = container.get_all_items() if container.has_method("get_all_items") else []
+
+	# First, look for items reserved by us
+	for item in all_items:
+		if item.item_tag == tag and item.is_reserved() and item.reserved_by == self:
+			return item
+
+	# Then, look for unreserved items
+	for item in all_items:
+		if item.item_tag == tag and not item.is_reserved():
+			return item
+
 	return null
 
 ## Pathfind to a container
@@ -849,16 +912,18 @@ func _on_arrived_at_container() -> void:
 	var needed := items_to_gather[0]
 	var tag: String = needed["tag"]
 
-	# Find and pick up the item
-	var item := target_container.find_item_by_tag(tag)
-	if item == null or item.is_reserved():
+	# Find and pick up the item - prefer items reserved by us, then unreserved
+	var item := _find_item_in_container(target_container, tag)
+	if item == null:
 		# Item no longer available, try to find another container
+		print("[NPC ", npc_id, "] Item not found in container, looking for another")
 		target_container = null
 		if not _start_gathering_next_item():
 			_cancel_hauling()
 		return
 
 	# Pick up the item
+	print("[NPC ", npc_id, "] Picking up item: ", item.item_tag)
 	_pick_up_item(item)
 
 	# Check if we need more of this item
@@ -904,6 +969,7 @@ func _pick_up_item(item: ItemEntity) -> void:
 
 ## Called when all required items have been gathered
 func _on_all_items_gathered() -> void:
+	print("[NPC ", npc_id, "] All items gathered, starting work phase")
 	target_container = null
 
 	# Start working on the job - find station for first step
@@ -911,6 +977,7 @@ func _on_all_items_gathered() -> void:
 		current_job.start()
 		_start_next_work_step()
 	else:
+		print("[NPC ", npc_id, "] No job or recipe, going idle")
 		current_state = State.IDLE
 
 ## Cancel hauling and release resources
@@ -1151,14 +1218,18 @@ func set_available_stations(stations: Array[Station]) -> void:
 ## Start the next work step in the current job's recipe
 func _start_next_work_step() -> void:
 	if current_job == null or current_job.recipe == null:
+		print("[NPC ", npc_id, "] _start_next_work_step: no job, finishing")
 		_finish_job()
 		return
 
 	var step := current_job.get_current_step()
 	if step == null:
 		# No more steps, job is complete
+		print("[NPC ", npc_id, "] _start_next_work_step: no more steps, job complete!")
 		_finish_job()
 		return
+
+	print("[NPC ", npc_id, "] _start_next_work_step: step ", current_job.current_step_index, " action=", step.action, " station=", step.station_tag)
 
 	# Find station for this step
 	var station := _find_station_for_step(step)
@@ -1172,6 +1243,7 @@ func _start_next_work_step() -> void:
 		_cancel_working("Could not reserve station: " + station.station_tag)
 		return
 
+	print("[NPC ", npc_id, "] Reserved station: ", station.station_tag, " at ", station.global_position)
 	target_station = station
 	current_job.target_station = station
 
@@ -1221,9 +1293,8 @@ func _pathfind_to_station(station: Station) -> void:
 
 	path_index = 0
 
-	if current_path.size() > 0:
-		current_state = State.WORKING
-	else:
+	current_state = State.WORKING
+	if current_path.size() == 0:
 		# Already at station or no path needed
 		_on_arrived_at_station()
 
@@ -1239,6 +1310,7 @@ func _follow_path_working(speed_mult: float) -> void:
 
 ## Called when agent arrives at the target station
 func _on_arrived_at_station() -> void:
+	print("[NPC ", npc_id, "] _on_arrived_at_station called")
 	if target_station == null or current_job == null:
 		_cancel_working("No station or job on arrival")
 		return
@@ -1280,12 +1352,14 @@ func _start_step_work() -> void:
 
 	var step := current_job.get_current_step()
 	if step == null:
+		print("[NPC ", npc_id, "] _start_step_work: no step, finishing job")
 		_finish_job()
 		return
 
 	# Set up timer and animation
 	work_timer = step.duration
 	current_animation = step.animation
+	print("[NPC ", npc_id, "] _start_step_work: work_timer=", work_timer, " for action=", step.action)
 
 	# Play animation if specified (agent would need AnimationPlayer)
 	if not current_animation.is_empty():
@@ -1310,6 +1384,7 @@ func _do_work(scaled_delta: float, _game_delta: float) -> void:
 
 ## Called when the current step's timer completes
 func _on_step_complete() -> void:
+	print("[NPC ", npc_id, "] _on_step_complete called")
 	if current_job == null:
 		_cancel_working("No job on step complete")
 		return
@@ -1397,12 +1472,15 @@ func _pick_up_items_from_station() -> void:
 
 ## Complete the job successfully
 func _finish_job() -> void:
+	print("[NPC ", npc_id, "] _finish_job called")
 	if current_job == null:
+		print("[NPC ", npc_id, "] No current job, going idle")
 		current_state = State.IDLE
 		return
 
 	# Apply motive effects from recipe
 	if current_job.recipe != null:
+		print("[NPC ", npc_id, "] Applying motive effects from recipe: ", current_job.recipe.motive_effects)
 		for motive_name in current_job.recipe.motive_effects:
 			var effect: float = current_job.recipe.motive_effects[motive_name]
 			# Convert motive name to MotiveType if possible
