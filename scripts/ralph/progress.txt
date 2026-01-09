@@ -279,3 +279,35 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - monitorable=true required on Area2D for point queries to detect it
 
 ---
+
+## 2026-01-09 - US-010
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created NPCInspector panel that displays when an NPC is selected
+- Displays NPC name/ID (e.g., "NPC 0") centered at top
+- Displays current state name (IDLE, WALKING, WAITING, USING_OBJECT, HAULING, WORKING)
+- Displays current job info: recipe name, step index, and job state (or "None" if no job)
+- Displays held item tag (or "Empty" if not holding anything)
+- Displays 5 motive bars (hunger, energy, bladder, hygiene, fun) with interactive HSliders
+- Sliders range 0-100 (converted to/from internal -100 to +100 range)
+- Slider changes immediately call DebugCommands.set_npc_motive()
+- Added 3 quick action buttons:
+  - "Make Hungry" sets hunger to 10
+  - "Make Full" sets hunger to 100
+  - "Reset Motives" sets all motives to 100
+- Panel updates in real-time via _process() polling inspection data
+- Integrated into DebugUI: shows NPCInspector when NPC selected, hides placeholder label
+- All 12 test suites pass (1038 total assertions)
+
+**Files changed:**
+- scripts/npc_inspector.gd (new)
+- scenes/npc_inspector.tscn (new)
+- scripts/debug_ui.gd (added NPCInspector integration, _update_inspector_for_entity, _show_npc_inspector, _hide_all_inspectors, _clear_all_inspectors)
+
+**Learnings for future iterations:**
+- Use _process() for real-time UI updates rather than signals for simpler implementation
+- Temporarily disconnect slider signals before programmatic value updates to avoid feedback loops
+- Preload inspector scenes as const for lazy instantiation on first use
+- Inspector panels should have set_npc()/clear() methods for DebugUI to control visibility
+- Motive value conversion: display = (internal + 100) / 2, internal = (display * 2) - 100
+
+---
