@@ -11,6 +11,7 @@ const ContainerInspectorScene = preload("res://scenes/container_inspector.tscn")
 
 # Preload tools scenes
 const SpawnToolsScene = preload("res://scenes/spawn_tools.tscn")
+const WallPaintToolScene = preload("res://scenes/wall_paint_tool.tscn")
 
 # References to UI sections for child scripts to access
 @onready var inspector_section: VBoxContainer = $SidePanel/ScrollContainer/MarginContainer/VBoxContainer/InspectorSection
@@ -25,6 +26,7 @@ var container_inspector: Node = null
 
 # Tools panels - instantiated on demand
 var spawn_tools: Node = null
+var wall_paint_tool: Node = null
 
 # Selection outline - drawn as rectangle around selected entity
 var selected_entity: Node2D = null
@@ -93,6 +95,10 @@ func _input(event: InputEvent) -> void:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			# Check if spawn tools is in active spawn mode - if so, let it handle
 			if spawn_tools != null and spawn_tools.current_mode != spawn_tools.SpawnMode.NONE:
+				return
+
+			# Check if wall paint tool is in active paint mode - if so, let it handle
+			if wall_paint_tool != null and wall_paint_tool.is_paint_mode_active():
 				return
 
 			# Check if click is over any UI control - if so, don't handle
@@ -470,7 +476,7 @@ func _clear_all_inspectors() -> void:
 		placeholder.text = "Select an entity to inspect"
 
 
-## Setup the tools section with spawn tools
+## Setup the tools section with spawn tools and wall paint tool
 func _setup_tools_section() -> void:
 	# Remove placeholder label from tools section
 	var placeholder := tools_section.get_node_or_null("PlaceholderLabel")
@@ -481,3 +487,12 @@ func _setup_tools_section() -> void:
 	if spawn_tools == null:
 		spawn_tools = SpawnToolsScene.instantiate()
 		tools_section.add_child(spawn_tools)
+
+	# Add separator before wall paint tool
+	var separator := HSeparator.new()
+	tools_section.add_child(separator)
+
+	# Add wall paint tool
+	if wall_paint_tool == null:
+		wall_paint_tool = WallPaintToolScene.instantiate()
+		tools_section.add_child(wall_paint_tool)
