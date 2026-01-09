@@ -1,6 +1,9 @@
 class_name RecipeStep
 extends Resource
 
+class_name RecipeStep
+extends Resource
+
 ## Defines a single step within a recipe interaction sequence
 ## Each step occurs at a specific station with an action and duration
 

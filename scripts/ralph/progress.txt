@@ -14,6 +14,31 @@
 - Slot items tracked via Dictionary mapping slot_index to ItemEntity
 - Resources (extending Resource) use class_name for global registration and are saved as .tres files
 - Resources directory: resources/recipes/ for recipe-related resources
+- Inner classes in GDScript use `class ClassName:` syntax within the main script
+- For Resource serialization, complex inner class data is stored as Array[Dictionary] with to_dict()/from_dict() conversion
+
+---
+
+## 2026-01-09 - US-005
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented Recipe class extending Resource for complete interaction sequences
+- Added recipe_name (String), inputs (Array[Dictionary]), tools (Array[String])
+- Added steps (Array[RecipeStep]), outputs (Array[Dictionary]), motive_effects (Dictionary)
+- Created RecipeInput inner class with: item_tag, quantity, consumed (with to_dict/from_dict serialization)
+- Created RecipeOutput inner class with: item_tag, quantity (with to_dict/from_dict serialization)
+- Added helper methods: get_inputs(), get_outputs(), add_input(), add_output(), add_tool(), add_step()
+- Added query methods: get_step_count(), get_step(), get_total_duration(), get_required_stations()
+- Added motive methods: affects_motive(), get_motive_effect(), get_affected_motives()
+- Created example_recipe.tres as example resource file referencing example_step_prep.tres
+- Files changed:
+  - scripts/recipe.gd (new)
+  - resources/recipes/example_recipe.tres (new)
+- **Learnings for future iterations:**
+  - Inner classes defined with `class ClassName:` inside the script
+  - Inner classes cannot be directly serialized by Godot's @export, so use Dictionary conversion
+  - Use Array[Dictionary] for @export of inner class data, with from_dict()/to_dict() helper methods
+  - Recipe references RecipeStep resources in steps array for multi-step sequences
+  - Resources can reference other resources using ExtResource in .tres files
 
 ---
 
