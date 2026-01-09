@@ -12,6 +12,7 @@ const ContainerInspectorScene = preload("res://scenes/container_inspector.tscn")
 # Preload tools scenes
 const SpawnToolsScene = preload("res://scenes/spawn_tools.tscn")
 const WallPaintToolScene = preload("res://scenes/wall_paint_tool.tscn")
+const PostJobToolScene = preload("res://scenes/post_job_tool.tscn")
 
 # References to UI sections for child scripts to access
 @onready var inspector_section: VBoxContainer = $SidePanel/ScrollContainer/MarginContainer/VBoxContainer/InspectorSection
@@ -27,6 +28,7 @@ var container_inspector: Node = null
 # Tools panels - instantiated on demand
 var spawn_tools: Node = null
 var wall_paint_tool: Node = null
+var post_job_tool: Node = null
 
 # Selection outline - drawn as rectangle around selected entity
 var selected_entity: Node2D = null
@@ -476,7 +478,7 @@ func _clear_all_inspectors() -> void:
 		placeholder.text = "Select an entity to inspect"
 
 
-## Setup the tools section with spawn tools and wall paint tool
+## Setup the tools section with spawn tools, wall paint tool, and post job tool
 func _setup_tools_section() -> void:
 	# Remove placeholder label from tools section
 	var placeholder := tools_section.get_node_or_null("PlaceholderLabel")
@@ -496,3 +498,12 @@ func _setup_tools_section() -> void:
 	if wall_paint_tool == null:
 		wall_paint_tool = WallPaintToolScene.instantiate()
 		tools_section.add_child(wall_paint_tool)
+
+	# Add separator before post job tool
+	var separator2 := HSeparator.new()
+	tools_section.add_child(separator2)
+
+	# Add post job tool
+	if post_job_tool == null:
+		post_job_tool = PostJobToolScene.instantiate()
+		tools_section.add_child(post_job_tool)

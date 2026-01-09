@@ -1,0 +1,26 @@
+[gd_scene load_steps=2 format=3 uid="uid://bxq3r7kj8wfm2"]
+
+[ext_resource type="Script" path="res://scripts/post_job_tool.gd" id="1_post_job"]
+
+[node name="PostJobTool" type="VBoxContainer"]
+offset_right = 260.0
+offset_bottom = 100.0
+script = ExtResource("1_post_job")
+
+[node name="HeaderLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Post Job"
+horizontal_alignment = 1
+
+[node name="RecipeDropdown" type="OptionButton" parent="."]
+layout_mode = 2
+tooltip_text = "Select a recipe to post as a job"
+
+[node name="PostButton" type="Button" parent="."]
+layout_mode = 2
+text = "Post Job"
+tooltip_text = "Create a new job from the selected recipe"
+
+[node name="StatusLabel" type="Label" parent="."]
+layout_mode = 2
+horizontal_alignment = 1
