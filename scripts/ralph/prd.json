@@ -91,7 +91,7 @@
         "Project runs without errors"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Recipes: cook_simple_meal, use_toilet, watch_tv"
     },
     {

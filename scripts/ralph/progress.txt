@@ -133,3 +133,26 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Case-insensitive motive names make the API more forgiving (HUNGER, Hunger, hunger all work)
 
 ---
+
+## 2026-01-09 - US-005
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented post_job(recipe_path) in DebugCommands
+- Loads recipe from resource path, creates job via JobBoard.post_job()
+- Implemented interrupt_job(job) wrapping JobBoard.interrupt_job
+- Implemented get_all_jobs() returning array of all jobs from JobBoard
+- Implemented get_jobs_by_state(state) filtering jobs by JobState enum
+- Added job_posted_debug and job_interrupted_debug signals
+- Added 10 new tests covering all 3 recipe types and interruption scenarios (40 new assertions)
+- All 12 test suites pass (930 total assertions)
+
+**Files changed:**
+- scripts/debug_commands.gd (added job management methods and signals)
+- scripts/tests/test_debug_commands.gd (added 10 job management tests)
+
+**Learnings for future iterations:**
+- JobBoard already has most functionality - DebugCommands wraps it with debug-specific signals
+- Recipe resources can be loaded at runtime via load(path) as Recipe
+- Job state transitions: POSTED → CLAIMED → IN_PROGRESS → INTERRUPTED/COMPLETED/FAILED
+- Jobs can only be interrupted when IN_PROGRESS (not POSTED or CLAIMED)
+
+---
