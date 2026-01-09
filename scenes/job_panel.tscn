@@ -1,0 +1,123 @@
+[gd_scene load_steps=2 format=3 uid="uid://jobpanel001"]
+
+[ext_resource type="Script" path="res://scripts/job_panel.gd" id="1_job_panel"]
+
+[node name="JobPanel" type="PanelContainer"]
+custom_minimum_size = Vector2(0, 40)
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -40.0
+offset_right = -280.0
+grow_horizontal = 2
+grow_vertical = 0
+script = ExtResource("1_job_panel")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="StatusBar" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 0
+theme_override_constants/separation = 12
+
+[node name="MarginLeft" type="Control" parent="VBoxContainer/StatusBar"]
+custom_minimum_size = Vector2(8, 0)
+layout_mode = 2
+
+[node name="PostedLabel" type="Label" parent="VBoxContainer/StatusBar"]
+layout_mode = 2
+text = "Posted: 0"
+
+[node name="ClaimedLabel" type="Label" parent="VBoxContainer/StatusBar"]
+layout_mode = 2
+text = "Claimed: 0"
+
+[node name="InProgressLabel" type="Label" parent="VBoxContainer/StatusBar"]
+layout_mode = 2
+text = "In Progress: 0"
+
+[node name="InterruptedLabel" type="Label" parent="VBoxContainer/StatusBar"]
+layout_mode = 2
+text = "Interrupted: 0"
+
+[node name="CompletedLabel" type="Label" parent="VBoxContainer/StatusBar"]
+layout_mode = 2
+text = "Completed: 0"
+
+[node name="FailedLabel" type="Label" parent="VBoxContainer/StatusBar"]
+layout_mode = 2
+text = "Failed: 0"
+
+[node name="Spacer" type="Control" parent="VBoxContainer/StatusBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ExpandButton" type="Button" parent="VBoxContainer/StatusBar"]
+layout_mode = 2
+text = "▲"
+
+[node name="MarginRight" type="Control" parent="VBoxContainer/StatusBar"]
+custom_minimum_size = Vector2(8, 0)
+layout_mode = 2
+
+[node name="JobListContainer" type="VBoxContainer" parent="VBoxContainer"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer/JobListContainer"]
+layout_mode = 2
+
+[node name="HeaderRow" type="HBoxContainer" parent="VBoxContainer/JobListContainer"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="MarginLeft" type="Control" parent="VBoxContainer/JobListContainer/HeaderRow"]
+custom_minimum_size = Vector2(8, 0)
+layout_mode = 2
+
+[node name="RecipeHeader" type="Label" parent="VBoxContainer/JobListContainer/HeaderRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Recipe"
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+
+[node name="StateHeader" type="Label" parent="VBoxContainer/JobListContainer/HeaderRow"]
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+text = "State"
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+
+[node name="NPCHeader" type="Label" parent="VBoxContainer/JobListContainer/HeaderRow"]
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+text = "NPC"
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+
+[node name="StepHeader" type="Label" parent="VBoxContainer/JobListContainer/HeaderRow"]
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+text = "Step"
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+
+[node name="ActionHeader" type="Label" parent="VBoxContainer/JobListContainer/HeaderRow"]
+custom_minimum_size = Vector2(70, 0)
+layout_mode = 2
+text = "Action"
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+
+[node name="MarginRight" type="Control" parent="VBoxContainer/JobListContainer/HeaderRow"]
+custom_minimum_size = Vector2(8, 0)
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer/JobListContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="JobList" type="VBoxContainer" parent="VBoxContainer/JobListContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
