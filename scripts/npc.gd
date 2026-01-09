@@ -569,6 +569,7 @@ func set_available_containers(containers: Array[ItemContainer]) -> void:
 
 ## Start hauling items for a job
 ## Returns true if hauling started, false if requirements can't be met
+## Handles both new jobs and resuming interrupted jobs
 func start_hauling_for_job(job: Job) -> bool:
 	if job == null or job.recipe == null:
 		return false
@@ -576,6 +577,9 @@ func start_hauling_for_job(job: Job) -> bool:
 	current_job = job
 	held_items.clear()
 	items_to_gather.clear()
+
+	# Check if this is a resumed interrupted job
+	var is_resumed := job.current_step_index > 0
 
 	# Build list of items to gather from recipe inputs and tools
 	for input_data in job.recipe.inputs:
@@ -585,8 +589,40 @@ func start_hauling_for_job(job: Job) -> bool:
 	for tool_tag in job.recipe.tools:
 		items_to_gather.append({"tag": tool_tag, "quantity": 1})
 
-	# Start gathering the first item
+	# If resuming, check for items already at stations or on ground near work area
+	if is_resumed:
+		_account_for_existing_items()
+
+	# Start gathering the first item (or skip if all items accounted for)
 	return _start_gathering_next_item()
+
+## Account for items that may already exist at stations or on ground from interrupted job
+func _account_for_existing_items() -> void:
+	if current_job == null:
+		return
+
+	# Find items at stations that match our requirements
+	for station in available_stations:
+		var station_items := station.get_all_input_items()
+		for item in station_items:
+			if not is_instance_valid(item):
+				continue
+			# Check if this item matches something we need
+			_reduce_gather_requirement(item.item_tag)
+
+	# Also check items on the ground (gathered_items from previous agent might be there)
+	# These items would need to be reserved and picked up normally
+	# For now, we just check station slots since that's the most common case
+
+## Reduce the quantity needed for a specific item tag (used when resuming interrupted jobs)
+func _reduce_gather_requirement(tag: String) -> void:
+	for i in range(items_to_gather.size()):
+		var req: Dictionary = items_to_gather[i]
+		if req["tag"] == tag:
+			req["quantity"] = req["quantity"] - 1
+			if req["quantity"] <= 0:
+				items_to_gather.remove_at(i)
+			return
 
 ## Find and pathfind to the next item that needs to be gathered
 func _start_gathering_next_item() -> bool:
@@ -1392,3 +1428,73 @@ func get_work_progress() -> float:
 ## Check if agent is currently working
 func is_working() -> bool:
 	return current_state == State.WORKING
+
+# ============================================================================
+# JOB INTERRUPTION
+# ============================================================================
+
+## Interrupt the current job, dropping items and preserving job state for resumption
+## Returns true if job was interrupted, false if no job to interrupt
+func interrupt_current_job() -> bool:
+	if current_job == null:
+		return false
+
+	# Only interrupt if we're actively working on the job
+	if current_job.state != Job.JobState.IN_PROGRESS:
+		return false
+
+	# Stop any animation
+	if not current_animation.is_empty():
+		_stop_animation()
+		current_animation = ""
+
+	# Handle items - either leave in station slots or drop on ground
+	# Items already placed in station slots stay there (IN_SLOT)
+	# Items we're still holding get dropped on ground (ON_GROUND)
+	var items_to_drop := held_items.duplicate()
+	for item in items_to_drop:
+		if is_instance_valid(item):
+			_drop_item_on_interrupt(item)
+	held_items.clear()
+
+	# Release station reservation (but don't pick up items from it)
+	if target_station != null:
+		if target_station.is_reserved_by(self):
+			target_station.release()
+		target_station = null
+
+	# Interrupt the job via JobBoard (this releases item reservations too)
+	if current_job != null:
+		JobBoard.interrupt_job(current_job)
+		current_job = null
+
+	# Reset state
+	work_timer = 0.0
+	items_to_gather.clear()
+	target_container = null
+	current_path = PackedVector2Array()
+	path_index = 0
+	velocity = Vector2.ZERO
+	current_state = State.IDLE
+
+	return true
+
+## Drop an item during interruption (ON_GROUND, preserves position)
+func _drop_item_on_interrupt(item: ItemEntity) -> void:
+	if item == null or not is_instance_valid(item):
+		return
+
+	# Remove from held items if present
+	var idx := held_items.find(item)
+	if idx >= 0:
+		held_items.remove_at(idx)
+
+	# Reparent to world at current agent position
+	if item.get_parent() == self:
+		var world_pos := global_position
+		remove_child(item)
+		get_parent().add_child(item)
+		item.global_position = world_pos
+
+	# Set item to ON_GROUND (reservation will be released by job.interrupt())
+	item.set_location(ItemEntity.ItemLocation.ON_GROUND)

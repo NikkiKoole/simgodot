@@ -34,6 +34,12 @@ func run_tests() -> void:
 	test_can_start_job_reserved_items()
 	test_can_start_job_reserved_stations()
 	test_can_start_job_multiple_requirements()
+	test_interrupt_job()
+	test_interrupt_job_signal()
+	test_interrupt_job_preserves_step_index()
+	test_interrupted_job_claimable()
+	test_interrupted_job_reservations_released()
+	test_resume_interrupted_job()
 
 	_log_summary()
 
@@ -634,4 +640,247 @@ func test_can_start_job_multiple_requirements() -> void:
 	stove.queue_free()
 	container.queue_free()
 	container2.queue_free()
+	_cleanup_job_board(board)
+
+
+# ============================================================================
+# interrupt_job() tests (US-012)
+# ============================================================================
+
+func test_interrupt_job() -> void:
+	test("Interrupt job")
+	var board = _create_job_board()
+	var recipe := _create_test_recipe()
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	var job: Job = board.post_job(recipe, 1)
+
+	# Cannot interrupt POSTED job
+	var interrupted: bool = board.interrupt_job(job)
+	assert_false(interrupted, "Cannot interrupt POSTED job")
+	assert_eq(job.state, Job.JobState.POSTED, "Job should still be POSTED")
+
+	# Claim and start the job
+	board.claim_job(job, agent)
+	assert_eq(job.state, Job.JobState.CLAIMED, "Job should be CLAIMED")
+
+	# Cannot interrupt CLAIMED job
+	interrupted = board.interrupt_job(job)
+	assert_false(interrupted, "Cannot interrupt CLAIMED job")
+	assert_eq(job.state, Job.JobState.CLAIMED, "Job should still be CLAIMED")
+
+	# Start the job
+	job.start()
+	assert_eq(job.state, Job.JobState.IN_PROGRESS, "Job should be IN_PROGRESS")
+
+	# Now interrupt should work
+	interrupted = board.interrupt_job(job)
+	assert_true(interrupted, "Should interrupt IN_PROGRESS job")
+	assert_eq(job.state, Job.JobState.INTERRUPTED, "Job should be INTERRUPTED")
+
+	# Cannot interrupt already interrupted job
+	interrupted = board.interrupt_job(job)
+	assert_false(interrupted, "Cannot interrupt already INTERRUPTED job")
+
+	agent.queue_free()
+	_cleanup_job_board(board)
+
+func test_interrupt_job_signal() -> void:
+	test("Interrupt job signal")
+	var board = _create_job_board()
+	var recipe := _create_test_recipe()
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	var signals_received := {"interrupted": false, "interrupted_job": null}
+	board.job_interrupted.connect(func(j):
+		signals_received["interrupted"] = true
+		signals_received["interrupted_job"] = j
+	)
+
+	var job: Job = board.post_job(recipe, 1)
+	board.claim_job(job, agent)
+	job.start()
+
+	board.interrupt_job(job)
+
+	assert_true(signals_received["interrupted"], "job_interrupted signal should be emitted")
+	assert_eq(signals_received["interrupted_job"], job, "Signal should pass the correct job")
+
+	agent.queue_free()
+	_cleanup_job_board(board)
+
+func test_interrupt_job_preserves_step_index() -> void:
+	test("Interrupt job preserves step index")
+	var board = _create_job_board()
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	# Create recipe with multiple steps
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Multi-step"
+	var step1 := RecipeStep.new()
+	step1.station_tag = "counter"
+	step1.action = "prep"
+	step1.duration = 2.0
+	recipe.add_step(step1)
+	var step2 := RecipeStep.new()
+	step2.station_tag = "stove"
+	step2.action = "cook"
+	step2.duration = 5.0
+	recipe.add_step(step2)
+	var step3 := RecipeStep.new()
+	step3.station_tag = "counter"
+	step3.action = "plate"
+	step3.duration = 1.0
+	recipe.add_step(step3)
+
+	var job: Job = board.post_job(recipe, 1)
+	board.claim_job(job, agent)
+	job.start()
+
+	# Advance to step 2 (index 1)
+	job.advance_step()
+	assert_eq(job.current_step_index, 1, "Should be at step 1")
+
+	# Interrupt
+	board.interrupt_job(job)
+	assert_eq(job.state, Job.JobState.INTERRUPTED, "Job should be INTERRUPTED")
+	assert_eq(job.current_step_index, 1, "Step index should be preserved after interrupt")
+
+	agent.queue_free()
+	_cleanup_job_board(board)
+
+func test_interrupted_job_claimable() -> void:
+	test("Interrupted job is claimable")
+	var board = _create_job_board()
+	var recipe := _create_test_recipe()
+	var agent1 := Node.new()
+	var agent2 := Node.new()
+	test_area.add_child(agent1)
+	test_area.add_child(agent2)
+
+	var job: Job = board.post_job(recipe, 1)
+	board.claim_job(job, agent1)
+	job.start()
+	board.interrupt_job(job)
+
+	# Job should be claimable
+	assert_true(job.is_claimable(), "Interrupted job should be claimable")
+
+	# Job should appear in available jobs
+	var available: Array[Job] = board.get_available_jobs()
+	assert_array_contains(available, job, "Interrupted job should be in available jobs")
+
+	# Another agent should be able to claim it
+	var claimed: bool = board.claim_job(job, agent2)
+	assert_true(claimed, "Agent2 should be able to claim interrupted job")
+	assert_eq(job.claimed_by, agent2, "Job should be claimed by agent2")
+	assert_eq(job.state, Job.JobState.CLAIMED, "Job should be CLAIMED after re-claim")
+
+	agent1.queue_free()
+	agent2.queue_free()
+	_cleanup_job_board(board)
+
+func test_interrupted_job_reservations_released() -> void:
+	test("Interrupted job releases reservations")
+	var board = _create_job_board()
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	# Create recipe with items
+	var recipe := _create_recipe_with_inputs("Cooking",
+		[{"tag": "raw_food", "quantity": 1}],
+		["knife"],
+		["counter"]
+	)
+
+	# Create container with items
+	var container := _create_container()
+	var food := _create_item("raw_food")
+	var knife := _create_item("knife")
+	container.add_item(food)
+	container.add_item(knife)
+
+	# Create station
+	var station := _create_station("counter")
+
+	var job: Job = board.post_job(recipe, 1)
+
+	# Claim job with containers (reserves items)
+	board.claim_job(job, agent, [container])
+
+	# Items should be reserved
+	assert_true(food.is_reserved(), "Food should be reserved after claim")
+	assert_true(knife.is_reserved(), "Knife should be reserved after claim")
+
+	# Start and interrupt
+	job.start()
+	station.reserve(agent)
+	job.target_station = station
+
+	board.interrupt_job(job)
+
+	# All reservations should be released
+	assert_false(food.is_reserved(), "Food should be unreserved after interrupt")
+	assert_false(knife.is_reserved(), "Knife should be unreserved after interrupt")
+	assert_null(job.claimed_by, "Job should have no claimed_by after interrupt")
+
+	agent.queue_free()
+	station.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+func test_resume_interrupted_job() -> void:
+	test("Resume interrupted job from step index")
+	var board = _create_job_board()
+	var agent1 := Node.new()
+	var agent2 := Node.new()
+	test_area.add_child(agent1)
+	test_area.add_child(agent2)
+
+	# Create recipe with multiple steps
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Multi-step"
+	var step1 := RecipeStep.new()
+	step1.station_tag = "counter"
+	step1.action = "prep"
+	step1.duration = 2.0
+	recipe.add_step(step1)
+	var step2 := RecipeStep.new()
+	step2.station_tag = "stove"
+	step2.action = "cook"
+	step2.duration = 5.0
+	recipe.add_step(step2)
+
+	var job: Job = board.post_job(recipe, 1)
+
+	# Agent1 claims, starts, advances, then gets interrupted
+	board.claim_job(job, agent1)
+	job.start()
+	job.advance_step()  # Move to step 1 (cook)
+	assert_eq(job.current_step_index, 1, "Should be at step 1")
+
+	board.interrupt_job(job)
+	assert_eq(job.current_step_index, 1, "Step index preserved after interrupt")
+
+	# Agent2 claims the interrupted job
+	var claimed: bool = board.claim_job(job, agent2)
+	assert_true(claimed, "Agent2 should claim interrupted job")
+	assert_eq(job.claimed_by, agent2, "Job should be claimed by agent2")
+	assert_eq(job.current_step_index, 1, "Step index should still be 1 after re-claim")
+
+	# Agent2 starts and continues from step 1
+	job.start()
+	assert_eq(job.state, Job.JobState.IN_PROGRESS, "Job should be IN_PROGRESS")
+	assert_eq(job.current_step_index, 1, "Should resume from step 1")
+
+	var current_step := job.get_current_step()
+	assert_not_null(current_step, "Should have current step")
+	assert_eq(current_step.station_tag, "stove", "Current step should be at stove")
+	assert_eq(current_step.action, "cook", "Current action should be cook")
+
+	agent1.queue_free()
+	agent2.queue_free()
 	_cleanup_job_board(board)

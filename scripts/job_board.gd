@@ -11,6 +11,7 @@ signal job_claimed(job: Job, agent: Node)
 signal job_completed(job: Job)
 signal job_released(job: Job)
 signal job_failed(job: Job, reason: String)
+signal job_interrupted(job: Job)
 
 func _ready() -> void:
 	pass
@@ -115,6 +116,23 @@ func release_job(job: Job) -> void:
 
 	job.release()
 	job_released.emit(job)
+
+## Interrupt a job, preserving progress for later resumption
+## Returns true if job was interrupted, false if not interruptible
+func interrupt_job(job: Job) -> bool:
+	if job == null:
+		return false
+
+	if not jobs.has(job):
+		return false
+
+	# Can only interrupt jobs that are IN_PROGRESS
+	if job.state != Job.JobState.IN_PROGRESS:
+		return false
+
+	job.interrupt()
+	job_interrupted.emit(job)
+	return true
 
 ## Get a job by its ID
 func get_job_by_id(job_id: String) -> Job:
