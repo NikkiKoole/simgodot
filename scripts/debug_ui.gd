@@ -13,6 +13,7 @@ const ContainerInspectorScene = preload("res://scenes/container_inspector.tscn")
 const SpawnToolsScene = preload("res://scenes/spawn_tools.tscn")
 const WallPaintToolScene = preload("res://scenes/wall_paint_tool.tscn")
 const PostJobToolScene = preload("res://scenes/post_job_tool.tscn")
+const ScenarioToolScene = preload("res://scenes/scenario_tool.tscn")
 const PathVisualizationScene = preload("res://scenes/path_visualization.tscn")
 const SlotVisualizationScene = preload("res://scenes/slot_visualization.tscn")
 
@@ -31,6 +32,7 @@ var container_inspector: Node = null
 var spawn_tools: Node = null
 var wall_paint_tool: Node = null
 var post_job_tool: Node = null
+var scenario_tool: Node = null
 
 # Path visualization - instantiated on demand
 var path_visualization: Node2D = null
@@ -534,6 +536,15 @@ func _setup_tools_section() -> void:
 	if post_job_tool == null:
 		post_job_tool = PostJobToolScene.instantiate()
 		tools_section.add_child(post_job_tool)
+
+	# Add separator before scenario tool
+	var separator3 := HSeparator.new()
+	tools_section.add_child(separator3)
+
+	# Add scenario tool
+	if scenario_tool == null:
+		scenario_tool = ScenarioToolScene.instantiate()
+		tools_section.add_child(scenario_tool)
 
 
 ## Set up path visualization for an NPC
