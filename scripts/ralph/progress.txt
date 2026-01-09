@@ -108,3 +108,28 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - The `tags` parameter in spawn_station is accepted but station_tag is used as primary identifier (stations use single tag, not array)
 
 ---
+
+## 2026-01-09 - US-004
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented spawn_npc(position, motives_dict) in DebugCommands
+- motives_dict optional - defaults to full motives (100 for all) if not provided
+- Implemented set_npc_motive(npc, motive_name, value) for individual motive changes
+- Implemented set_npc_motives(npc, motives_dict) for batch motive changes
+- Values clamped to 0-100 range (user-friendly), converted to internal -100 to +100 range
+- Added npc_spawned and motive_changed signals
+- Added runtime_npcs tracking array with get_runtime_npcs() and clear_runtime_npcs()
+- Added get_npc_motive(npc, motive_name) helper for reading motive values
+- Added 10 new tests covering all NPC spawning and motive adjustment scenarios (48 new assertions)
+- All 12 test suites pass (890 total assertions)
+
+**Files changed:**
+- scripts/debug_commands.gd (added NPC spawning and motive adjustment methods)
+- scripts/tests/test_debug_commands.gd (added 10 NPC tests)
+
+**Learnings for future iterations:**
+- Motive system uses -100 to +100 internal range, but 0-100 is more intuitive for debug UI
+- Conversion formula: internal = (user_value * 2) - 100 (0→-100, 50→0, 100→+100)
+- NPC motives are initialized in _ready(), so they're available immediately after adding to scene tree
+- Case-insensitive motive names make the API more forgiving (HUNGER, Hunger, hunger all work)
+
+---

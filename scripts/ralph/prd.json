@@ -73,7 +73,7 @@
         "Project runs without errors"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Key for testing hunger->cooking flow"
     },
     {
