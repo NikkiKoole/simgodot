@@ -27,6 +27,13 @@ func run_tests() -> void:
 	test_job_cleanup()
 	test_priority_jobs()
 	test_helper_methods()
+	test_can_start_job_valid()
+	test_can_start_job_missing_items()
+	test_can_start_job_missing_tools()
+	test_can_start_job_missing_stations()
+	test_can_start_job_reserved_items()
+	test_can_start_job_reserved_stations()
+	test_can_start_job_multiple_requirements()
 
 	_log_summary()
 
@@ -355,4 +362,276 @@ func test_helper_methods() -> void:
 	var available_hunger: Array[Job] = board.get_available_jobs_for_motive("hunger")
 	assert_array_size(available_hunger, 1, "Should have 1 available hunger job")
 	agent.queue_free()
+	_cleanup_job_board(board)
+
+
+# ============================================================================
+# can_start_job() tests
+# ============================================================================
+
+func _create_container(container_name: String = "TestContainer") -> ItemContainer:
+	var container := ItemContainer.new()
+	container.container_name = container_name
+	container.capacity = 10
+	test_area.add_child(container)
+	return container
+
+func _create_item(tag: String) -> ItemEntity:
+	var item := ItemEntity.new()
+	item.item_tag = tag
+	return item
+
+func _create_station(tag: String) -> Station:
+	var station := Station.new()
+	station.station_tag = tag
+	test_area.add_child(station)
+	return station
+
+func _create_recipe_with_inputs(recipe_name: String, inputs: Array[Dictionary], tools: Array[String], station_tags: Array[String]) -> Recipe:
+	var recipe := Recipe.new()
+	recipe.recipe_name = recipe_name
+
+	for input in inputs:
+		recipe.add_input(input.get("tag", ""), input.get("quantity", 1), input.get("consumed", true))
+
+	for tool_tag in tools:
+		recipe.add_tool(tool_tag)
+
+	for station_tag in station_tags:
+		var step := RecipeStep.new()
+		step.station_tag = station_tag
+		step.action = "work"
+		step.duration = 2.0
+		recipe.add_step(step)
+
+	return recipe
+
+func test_can_start_job_valid() -> void:
+	test("can_start_job with valid requirements")
+	var board = _create_job_board()
+
+	# Create recipe requiring 1 raw_food and a counter station
+	var recipe := _create_recipe_with_inputs("Cooking",
+		[{"tag": "raw_food", "quantity": 1}],
+		[],
+		["counter"]
+	)
+
+	# Create container with the required item
+	var container := _create_container()
+	var item := _create_item("raw_food")
+	container.add_item(item)
+
+	# Create the required station
+	var station := _create_station("counter")
+
+	var job: Job = board.post_job(recipe, 1)
+	var result = board.can_start_job(job, [container], [station])
+
+	assert_true(result.can_start, "Job should be startable with all requirements met")
+	assert_eq(result.reason, "", "Reason should be empty when can start")
+	assert_array_size(result.missing_items, 0, "No missing items")
+	assert_array_size(result.missing_tools, 0, "No missing tools")
+	assert_array_size(result.missing_stations, 0, "No missing stations")
+
+	station.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+func test_can_start_job_missing_items() -> void:
+	test("can_start_job with missing items")
+	var board = _create_job_board()
+
+	# Create recipe requiring 2 raw_food
+	var recipe := _create_recipe_with_inputs("Cooking",
+		[{"tag": "raw_food", "quantity": 2}],
+		[],
+		["counter"]
+	)
+
+	# Create container with only 1 item (need 2)
+	var container := _create_container()
+	var item := _create_item("raw_food")
+	container.add_item(item)
+
+	var station := _create_station("counter")
+
+	var job: Job = board.post_job(recipe, 1)
+	var result = board.can_start_job(job, [container], [station])
+
+	assert_false(result.can_start, "Job should NOT be startable with insufficient items")
+	assert_array_size(result.missing_items, 1, "Should have 1 missing item entry")
+	assert_eq(result.missing_items[0].item_tag, "raw_food", "Missing item should be raw_food")
+	assert_eq(result.missing_items[0].quantity_needed, 2, "Should need 2")
+	assert_eq(result.missing_items[0].quantity_found, 1, "Should have found 1")
+	assert_true(result.reason.contains("Missing items"), "Reason should mention missing items")
+
+	station.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+func test_can_start_job_missing_tools() -> void:
+	test("can_start_job with missing tools")
+	var board = _create_job_board()
+
+	# Create recipe requiring a knife tool
+	var recipe := _create_recipe_with_inputs("Cutting",
+		[],
+		["knife"],
+		["counter"]
+	)
+
+	# Create empty container (no knife)
+	var container := _create_container()
+	var station := _create_station("counter")
+
+	var job: Job = board.post_job(recipe, 1)
+	var result = board.can_start_job(job, [container], [station])
+
+	assert_false(result.can_start, "Job should NOT be startable without required tool")
+	assert_array_size(result.missing_tools, 1, "Should have 1 missing tool")
+	assert_eq(result.missing_tools[0], "knife", "Missing tool should be knife")
+	assert_true(result.reason.contains("Missing tools"), "Reason should mention missing tools")
+
+	station.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+func test_can_start_job_missing_stations() -> void:
+	test("can_start_job with missing stations")
+	var board = _create_job_board()
+
+	# Create recipe requiring a stove station
+	var recipe := _create_recipe_with_inputs("Cooking",
+		[],
+		[],
+		["stove"]
+	)
+
+	var container := _create_container()
+	# Create wrong station type
+	var station := _create_station("counter")
+
+	var job: Job = board.post_job(recipe, 1)
+	var result = board.can_start_job(job, [container], [station])
+
+	assert_false(result.can_start, "Job should NOT be startable without required station")
+	assert_array_size(result.missing_stations, 1, "Should have 1 missing station")
+	assert_eq(result.missing_stations[0], "stove", "Missing station should be stove")
+	assert_true(result.reason.contains("Unavailable stations"), "Reason should mention unavailable stations")
+
+	station.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+func test_can_start_job_reserved_items() -> void:
+	test("can_start_job with reserved items")
+	var board = _create_job_board()
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	# Create recipe requiring 1 raw_food
+	var recipe := _create_recipe_with_inputs("Cooking",
+		[{"tag": "raw_food", "quantity": 1}],
+		[],
+		["counter"]
+	)
+
+	# Create container with reserved item
+	var container := _create_container()
+	var item := _create_item("raw_food")
+	container.add_item(item)
+	item.reserve_item(agent)  # Reserve the item
+
+	var station := _create_station("counter")
+
+	var job: Job = board.post_job(recipe, 1)
+	var result = board.can_start_job(job, [container], [station])
+
+	assert_false(result.can_start, "Job should NOT be startable with reserved items")
+	assert_array_size(result.missing_items, 1, "Should show item as missing (reserved)")
+	assert_eq(result.missing_items[0].quantity_found, 0, "Should find 0 available items")
+
+	agent.queue_free()
+	station.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+func test_can_start_job_reserved_stations() -> void:
+	test("can_start_job with reserved stations")
+	var board = _create_job_board()
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	# Create recipe requiring counter station
+	var recipe := _create_recipe_with_inputs("Working",
+		[],
+		[],
+		["counter"]
+	)
+
+	var container := _create_container()
+	var station := _create_station("counter")
+	station.reserve(agent)  # Reserve the station
+
+	var job: Job = board.post_job(recipe, 1)
+	var result = board.can_start_job(job, [container], [station])
+
+	assert_false(result.can_start, "Job should NOT be startable with reserved station")
+	assert_array_size(result.missing_stations, 1, "Should show station as unavailable")
+	assert_eq(result.missing_stations[0], "counter", "Missing station should be counter")
+
+	agent.queue_free()
+	station.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+func test_can_start_job_multiple_requirements() -> void:
+	test("can_start_job with multiple requirements")
+	var board = _create_job_board()
+
+	# Create complex recipe with multiple requirements
+	var recipe := _create_recipe_with_inputs("Complex Cooking",
+		[{"tag": "raw_food", "quantity": 2}, {"tag": "seasoning", "quantity": 1}],
+		["knife", "pan"],
+		["counter", "stove"]
+	)
+
+	# Create container with all items and tools
+	var container := _create_container()
+	container.add_item(_create_item("raw_food"))
+	container.add_item(_create_item("raw_food"))
+	container.add_item(_create_item("seasoning"))
+	container.add_item(_create_item("knife"))
+	container.add_item(_create_item("pan"))
+
+	# Create both stations
+	var counter := _create_station("counter")
+	var stove := _create_station("stove")
+
+	var job: Job = board.post_job(recipe, 1)
+	var result = board.can_start_job(job, [container], [counter, stove])
+
+	assert_true(result.can_start, "Job should be startable with all complex requirements met")
+	assert_eq(result.reason, "", "Reason should be empty")
+
+	# Now test with missing some requirements
+	var container2 := _create_container()
+	container2.add_item(_create_item("raw_food"))  # Only 1, need 2
+	# Missing seasoning, knife, pan
+
+	var result2 = board.can_start_job(job, [container2], [counter])  # Missing stove
+
+	assert_false(result2.can_start, "Job should NOT be startable with missing requirements")
+	assert_array_size(result2.missing_items, 2, "Should have 2 missing item types")
+	assert_array_size(result2.missing_tools, 2, "Should have 2 missing tools")
+	assert_array_size(result2.missing_stations, 1, "Should have 1 missing station")
+	assert_true(result2.reason.contains("Missing items"), "Reason should mention items")
+	assert_true(result2.reason.contains("Missing tools"), "Reason should mention tools")
+	assert_true(result2.reason.contains("Unavailable stations"), "Reason should mention stations")
+
+	counter.queue_free()
+	stove.queue_free()
+	container.queue_free()
+	container2.queue_free()
 	_cleanup_job_board(board)

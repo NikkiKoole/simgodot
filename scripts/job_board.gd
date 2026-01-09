@@ -215,6 +215,102 @@ func _on_job_completed(job: Job) -> void:
 func _on_job_failed(reason: String, job: Job) -> void:
 	job_failed.emit(job, reason)
 
+## Result class for can_start_job validation
+class JobRequirementResult:
+	var can_start: bool = false
+	var reason: String = ""
+	var missing_items: Array[Dictionary] = []  # {item_tag, quantity_needed, quantity_found}
+	var missing_stations: Array[String] = []
+	var missing_tools: Array[String] = []
+
+	func _init(p_can_start: bool = false, p_reason: String = "") -> void:
+		can_start = p_can_start
+		reason = p_reason
+
+
+## Check if a job can be started given available containers and stations
+## Returns JobRequirementResult with validation details
+func can_start_job(job: Job, containers: Array, stations: Array) -> JobRequirementResult:
+	if job == null:
+		return JobRequirementResult.new(false, "Job is null")
+
+	if job.recipe == null:
+		return JobRequirementResult.new(false, "Job has no recipe")
+
+	var result := JobRequirementResult.new(true, "")
+	var recipe: Recipe = job.recipe
+
+	# Check required items in containers
+	for input_data in recipe.get_inputs():
+		var tag: String = input_data.item_tag
+		var quantity_needed: int = input_data.quantity
+		var quantity_found: int = 0
+
+		# Count available items across all containers
+		for container in containers:
+			if container is ItemContainer:
+				quantity_found += container.get_available_count(tag)
+
+		if quantity_found < quantity_needed:
+			result.can_start = false
+			result.missing_items.append({
+				"item_tag": tag,
+				"quantity_needed": quantity_needed,
+				"quantity_found": quantity_found
+			})
+
+	# Check required tools in containers
+	for tool_tag in recipe.tools:
+		var tool_found := false
+
+		for container in containers:
+			if container is ItemContainer:
+				if container.has_available_item(tool_tag):
+					tool_found = true
+					break
+
+		if not tool_found:
+			result.can_start = false
+			result.missing_tools.append(tool_tag)
+
+	# Check required stations are available
+	var required_stations: Array[String] = recipe.get_required_stations()
+	for station_tag in required_stations:
+		var station_available := false
+
+		for station in stations:
+			if station is Station:
+				if station.station_tag == station_tag and station.is_available():
+					station_available = true
+					break
+
+		if not station_available:
+			result.can_start = false
+			result.missing_stations.append(station_tag)
+
+	# Build reason string if cannot start
+	if not result.can_start:
+		var reasons: Array[String] = []
+
+		if result.missing_items.size() > 0:
+			var item_strs: Array[String] = []
+			for item in result.missing_items:
+				item_strs.append("%s (need %d, found %d)" % [
+					item.item_tag, item.quantity_needed, item.quantity_found
+				])
+			reasons.append("Missing items: " + ", ".join(item_strs))
+
+		if result.missing_tools.size() > 0:
+			reasons.append("Missing tools: " + ", ".join(result.missing_tools))
+
+		if result.missing_stations.size() > 0:
+			reasons.append("Unavailable stations: " + ", ".join(result.missing_stations))
+
+		result.reason = "; ".join(reasons)
+
+	return result
+
+
 ## Debug print all jobs
 func debug_print() -> void:
 	print("=== JobBoard ===")
