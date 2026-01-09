@@ -1,7 +1,6 @@
-[gd_scene load_steps=3 format=3 uid="uid://debugui001"]
+[gd_scene load_steps=2 format=3 uid="uid://debugui001"]
 
 [ext_resource type="Script" path="res://scripts/debug_ui.gd" id="1_debug_ui"]
-[ext_resource type="Script" path="res://scripts/selection_highlight.gd" id="2_selection_highlight"]
 
 [node name="DebugUI" type="CanvasLayer"]
 script = ExtResource("1_debug_ui")

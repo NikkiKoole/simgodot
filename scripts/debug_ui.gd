@@ -9,12 +9,12 @@ extends CanvasLayer
 @onready var bottom_bar: PanelContainer = $BottomBar
 @onready var job_status_label: Label = $BottomBar/MarginContainer/HBoxContainer/JobStatusLabel
 
-# Selection highlight - we handle it directly in DebugUI instead of a separate node
+# Selection outline - drawn as rectangle around selected entity
 var selected_entity: Node2D = null
-var original_modulate: Color = Color.WHITE
-var pulse_time: float = 0.0
-const PULSE_SPEED := 4.0
-const HIGHLIGHT_TINT := Color(1.0, 0.0, 0.0, 1.0)  # Yellowish tint
+var selection_outline: Node2D = null
+const OUTLINE_COLOR := Color(1.0, 0.8, 0.0, 1.0)  # Yellow/gold
+const OUTLINE_WIDTH := 2.0
+const OUTLINE_PADDING := 4.0  # Pixels of padding around entity
 
 # Click detection collision mask (layer 8 for clickable areas, layer 2 for NPCs)
 # Collision layers are bit masks: layer N = 2^(N-1), so layer 8 = 128, layer 2 = 2
@@ -67,12 +67,15 @@ func _find_camera_recursive(node: Node) -> Camera2D:
 	return null
 
 
-func _process(delta: float) -> void:
-	# Handle selection highlight pulsing
-	if selected_entity != null and is_instance_valid(selected_entity):
-		pulse_time += delta * PULSE_SPEED
-		var pulse := lerpf(0.7, 1.0, (sin(pulse_time) + 1.0) / 2.0)
-		selected_entity.modulate = HIGHLIGHT_TINT * pulse
+func _process(_delta: float) -> void:
+	# Update selection outline position to follow selected entity
+	if selection_outline != null and is_instance_valid(selection_outline):
+		if selected_entity != null and is_instance_valid(selected_entity):
+			selection_outline.global_position = selected_entity.global_position
+			selection_outline.queue_redraw()
+		else:
+			# Entity was freed, remove outline
+			_remove_selection_outline()
 
 
 func _input(event: InputEvent) -> void:
@@ -230,16 +233,14 @@ func _get_entity_priority(entity: Node) -> int:
 
 
 func _on_entity_selected(entity: Node) -> void:
-	# Restore previous entity's modulate
-	if selected_entity != null and is_instance_valid(selected_entity):
-		selected_entity.modulate = original_modulate
+	# Remove previous outline
+	_remove_selection_outline()
 
-	# Store new selected entity and its original modulate
+	# Store new selected entity and create outline
 	if entity is Node2D:
 		selected_entity = entity
-		original_modulate = entity.modulate
-		pulse_time = 0.0
-		print("[DebugUI] Highlight activated for: ", entity.name)
+		_create_selection_outline(entity)
+		print("[DebugUI] Selection outline for: ", entity.name)
 	else:
 		selected_entity = null
 
@@ -248,15 +249,85 @@ func _on_entity_selected(entity: Node) -> void:
 
 
 func _on_entity_deselected() -> void:
-	# Restore previous entity's modulate
-	if selected_entity != null and is_instance_valid(selected_entity):
-		selected_entity.modulate = original_modulate
-		print("[DebugUI] Highlight deactivated for: ", selected_entity.name)
-
+	_remove_selection_outline()
+	print("[DebugUI] Selection cleared")
 	selected_entity = null
 
 	# Clear inspector panel
 	_clear_inspector_placeholder()
+
+
+func _create_selection_outline(entity: Node2D) -> void:
+	# Get the entity's size from its collision shape or visual
+	var size := _get_entity_size(entity)
+
+	# Create outline node as child of the entity's parent (so it's in world space)
+	var parent := entity.get_parent()
+	if parent == null:
+		return
+
+	# Create a simple Node2D and connect its draw signal
+	selection_outline = Node2D.new()
+	selection_outline.name = "SelectionOutline"
+	selection_outline.z_index = 100  # Draw above everything
+	parent.add_child(selection_outline)
+
+	# Store size in metadata for drawing
+	selection_outline.set_meta("outline_size", size)
+
+	# Connect draw - we'll call queue_redraw each frame
+	selection_outline.draw.connect(_draw_outline)
+	selection_outline.global_position = entity.global_position
+	selection_outline.queue_redraw()
+
+
+func _draw_outline() -> void:
+	if selection_outline == null or not is_instance_valid(selection_outline):
+		return
+
+	var size: Vector2 = selection_outline.get_meta("outline_size", Vector2(32, 32))
+	var half_size := size / 2.0 + Vector2(OUTLINE_PADDING, OUTLINE_PADDING)
+
+	# Draw rectangle outline
+	var rect := Rect2(-half_size, size + Vector2(OUTLINE_PADDING * 2, OUTLINE_PADDING * 2))
+	selection_outline.draw_rect(rect, OUTLINE_COLOR, false, OUTLINE_WIDTH)
+
+
+func _remove_selection_outline() -> void:
+	if selection_outline != null and is_instance_valid(selection_outline):
+		selection_outline.queue_free()
+	selection_outline = null
+
+
+func _get_entity_size(entity: Node2D) -> Vector2:
+	# Try to get size from ClickArea collision shape
+	var click_area := entity.get_node_or_null("ClickArea")
+	if click_area != null:
+		var collision_shape := click_area.get_node_or_null("CollisionShape2D")
+		if collision_shape != null and collision_shape.shape != null:
+			var shape: Shape2D = collision_shape.shape
+			if shape is CircleShape2D:
+				var circle: CircleShape2D = shape
+				var diameter: float = circle.radius * 2
+				return Vector2(diameter, diameter)
+			elif shape is RectangleShape2D:
+				var rect: RectangleShape2D = shape
+				return rect.size
+
+	# Try to get from body collision (for NPCs)
+	var collision := entity.get_node_or_null("CollisionShape2D")
+	if collision != null and collision.shape != null:
+		var shape: Shape2D = collision.shape
+		if shape is CircleShape2D:
+			var circle: CircleShape2D = shape
+			var diameter: float = circle.radius * 2
+			return Vector2(diameter, diameter)
+		elif shape is RectangleShape2D:
+			var rect: RectangleShape2D = shape
+			return rect.size
+
+	# Default size
+	return Vector2(32, 32)
 
 
 func _update_inspector_placeholder(entity: Node) -> void:
