@@ -40,6 +40,13 @@ func run_tests() -> void:
 	test_interrupted_job_claimable()
 	test_interrupted_job_reservations_released()
 	test_resume_interrupted_job()
+	test_complete_job_basic()
+	test_complete_job_motive_effects()
+	test_complete_job_spawns_outputs()
+	test_complete_job_consumes_inputs()
+	test_complete_job_preserves_tools()
+	test_complete_job_with_transforms()
+	test_complete_job_invalid_states()
 
 	_log_summary()
 
@@ -883,4 +890,341 @@ func test_resume_interrupted_job() -> void:
 
 	agent1.queue_free()
 	agent2.queue_free()
+	_cleanup_job_board(board)
+
+
+# ============================================================================
+# complete_job() tests (US-013)
+# ============================================================================
+
+## Helper to create a mock agent with motives
+## Uses a custom script to add motives property
+func _create_mock_agent() -> Node2D:
+	var agent := MockAgent.new()
+	agent.motives = Motive.new("TestAgent")
+	test_area.add_child(agent)
+	return agent
+
+
+## Mock agent class with motives property
+class MockAgent extends Node2D:
+	var motives: Motive = null
+
+## Helper to create a recipe with outputs
+func _create_recipe_with_outputs(recipe_name: String, outputs: Array[Dictionary], motive_effects: Dictionary = {}) -> Recipe:
+	var recipe := Recipe.new()
+	recipe.recipe_name = recipe_name
+
+	for output in outputs:
+		recipe.add_output(output.get("tag", ""), output.get("quantity", 1))
+
+	for motive_name in motive_effects:
+		recipe.set_motive_effect(motive_name, motive_effects[motive_name])
+
+	# Add a simple step
+	var step := RecipeStep.new()
+	step.station_tag = "counter"
+	step.action = "work"
+	step.duration = 1.0
+	recipe.add_step(step)
+
+	return recipe
+
+## Helper to create a station with output slots
+func _create_station_with_slots(tag: String, num_output_slots: int = 1) -> Station:
+	var station := Station.new()
+	station.station_tag = tag
+	test_area.add_child(station)
+
+	# Add output slot markers
+	for i in range(num_output_slots):
+		var marker := Marker2D.new()
+		marker.name = "OutputSlot%d" % i
+		marker.position = Vector2(i * 16, 0)
+		station.add_child(marker)
+
+	# Trigger auto-discovery
+	station._auto_discover_markers()
+
+	return station
+
+
+func test_complete_job_basic() -> void:
+	test("complete_job basic functionality")
+	var board = _create_job_board()
+	var agent := _create_mock_agent()
+
+	var recipe := _create_test_recipe("Test Job")
+	var job: Job = board.post_job(recipe, 1)
+
+	# Cannot complete POSTED job
+	var completed: bool = board.complete_job(job, agent)
+	assert_false(completed, "Cannot complete POSTED job")
+
+	# Claim and start the job
+	board.claim_job(job, agent)
+
+	# Cannot complete CLAIMED job
+	completed = board.complete_job(job, agent)
+	assert_false(completed, "Cannot complete CLAIMED job")
+
+	# Start the job
+	job.start()
+	assert_eq(job.state, Job.JobState.IN_PROGRESS, "Job should be IN_PROGRESS")
+
+	# Now complete should work
+	completed = board.complete_job(job, agent)
+	assert_true(completed, "Should complete IN_PROGRESS job")
+	assert_eq(job.state, Job.JobState.COMPLETED, "Job should be COMPLETED")
+
+	agent.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_complete_job_motive_effects() -> void:
+	test("complete_job applies motive effects")
+	var board = _create_job_board()
+	var agent := _create_mock_agent()
+	var motives: Motive = agent.get("motives")
+
+	# Set initial motive values
+	motives.values[Motive.MotiveType.HUNGER] = 0.0
+	motives.values[Motive.MotiveType.FUN] = -20.0
+
+	# Create recipe with motive effects
+	var recipe := _create_recipe_with_outputs("Satisfying Meal",
+		[],
+		{"hunger": 50.0, "fun": 30.0}
+	)
+
+	var job: Job = board.post_job(recipe, 1)
+	board.claim_job(job, agent)
+	job.start()
+
+	# Complete the job
+	var completed: bool = board.complete_job(job, agent)
+	assert_true(completed, "Job should complete")
+
+	# Check motive effects were applied
+	assert_eq(motives.get_value(Motive.MotiveType.HUNGER), 50.0, "Hunger should increase by 50")
+	assert_eq(motives.get_value(Motive.MotiveType.FUN), 10.0, "Fun should increase by 30 (from -20 to 10)")
+
+	agent.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_complete_job_spawns_outputs() -> void:
+	test("complete_job spawns output items at station")
+	var board = _create_job_board()
+	var agent := _create_mock_agent()
+
+	# Create recipe with outputs
+	var recipe := _create_recipe_with_outputs("Cooking",
+		[{"tag": "cooked_meal", "quantity": 1}, {"tag": "leftover", "quantity": 2}],
+		{}
+	)
+
+	# Create station with 3 output slots
+	var station := _create_station_with_slots("counter", 3)
+
+	var job: Job = board.post_job(recipe, 1)
+	board.claim_job(job, agent)
+	job.start()
+
+	# Complete with station
+	var completed: bool = board.complete_job(job, agent, station)
+	assert_true(completed, "Job should complete")
+
+	# Check outputs were spawned
+	var output_items := station.get_all_output_items()
+	assert_array_size(output_items, 3, "Should have 3 output items (1 cooked_meal + 2 leftover)")
+
+	# Verify item tags
+	var cooked_count := 0
+	var leftover_count := 0
+	for item in output_items:
+		if item.item_tag == "cooked_meal":
+			cooked_count += 1
+			assert_eq(item.state, ItemEntity.ItemState.COOKED, "Cooked meal should have COOKED state")
+		elif item.item_tag == "leftover":
+			leftover_count += 1
+
+	assert_eq(cooked_count, 1, "Should have 1 cooked_meal")
+	assert_eq(leftover_count, 2, "Should have 2 leftovers")
+
+	# Cleanup output items
+	for item in output_items:
+		item.queue_free()
+
+	agent.queue_free()
+	station.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_complete_job_consumes_inputs() -> void:
+	test("complete_job consumes input items")
+	var board = _create_job_board()
+	var agent := _create_mock_agent()
+
+	# Create recipe with consumed inputs
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Consume Test"
+	recipe.add_input("raw_food", 2, true)  # 2x raw_food, consumed
+	var step := RecipeStep.new()
+	step.station_tag = "counter"
+	step.action = "cook"
+	step.duration = 1.0
+	recipe.add_step(step)
+
+	# Create items
+	var food1 := _create_item("raw_food")
+	var food2 := _create_item("raw_food")
+	test_area.add_child(food1)
+	test_area.add_child(food2)
+
+	var job: Job = board.post_job(recipe, 1)
+	board.claim_job(job, agent)
+
+	# Add items to gathered
+	job.add_gathered_item(food1)
+	job.add_gathered_item(food2)
+
+	job.start()
+
+	# Complete the job
+	var completed: bool = board.complete_job(job, agent)
+	assert_true(completed, "Job should complete")
+
+	# Wait a frame for queue_free to process
+	await get_tree().process_frame
+
+	# Check items were consumed (freed)
+	assert_false(is_instance_valid(food1), "food1 should be freed (consumed)")
+	assert_false(is_instance_valid(food2), "food2 should be freed (consumed)")
+
+	agent.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_complete_job_preserves_tools() -> void:
+	test("complete_job preserves tools (not consumed)")
+	var board = _create_job_board()
+	var agent := _create_mock_agent()
+
+	# Create recipe with tool
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Tool Test"
+	recipe.add_input("raw_food", 1, true)  # consumed
+	recipe.add_tool("knife")  # not consumed
+	var step := RecipeStep.new()
+	step.station_tag = "counter"
+	step.action = "cut"
+	step.duration = 1.0
+	recipe.add_step(step)
+
+	# Create items
+	var food := _create_item("raw_food")
+	var knife := _create_item("knife")
+	test_area.add_child(food)
+	test_area.add_child(knife)
+
+	var job: Job = board.post_job(recipe, 1)
+	board.claim_job(job, agent)
+
+	# Add items to gathered
+	job.add_gathered_item(food)
+	job.add_gathered_item(knife)
+
+	# Reserve items
+	food.reserve_item(agent)
+	knife.reserve_item(agent)
+
+	job.start()
+
+	# Complete the job
+	var completed: bool = board.complete_job(job, agent)
+	assert_true(completed, "Job should complete")
+
+	# Wait a frame for queue_free to process
+	await get_tree().process_frame
+
+	# Check food was consumed but knife preserved
+	assert_false(is_instance_valid(food), "food should be freed (consumed)")
+	assert_true(is_instance_valid(knife), "knife should still exist (tool)")
+	assert_false(knife.is_reserved(), "knife reservation should be released")
+
+	knife.queue_free()
+	agent.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_complete_job_with_transforms() -> void:
+	test("complete_job handles transformed items correctly")
+	var board = _create_job_board()
+	var agent := _create_mock_agent()
+
+	# Create recipe where raw_food transforms to cooked_food
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Transform Test"
+	recipe.add_input("raw_food", 1, true)  # consumed
+	var step := RecipeStep.new()
+	step.station_tag = "stove"
+	step.action = "cook"
+	step.duration = 5.0
+	step.input_transform = {"raw_food": "cooked_food"}
+	recipe.add_step(step)
+
+	# Create item and simulate transformation
+	var food := _create_item("raw_food")
+	test_area.add_child(food)
+
+	var job: Job = board.post_job(recipe, 1)
+	board.claim_job(job, agent)
+	job.add_gathered_item(food)
+	job.start()
+
+	# Simulate step transform (as agent would do during work)
+	food.item_tag = "cooked_food"
+	food.state = ItemEntity.ItemState.COOKED
+
+	# Complete the job
+	var completed: bool = board.complete_job(job, agent)
+	assert_true(completed, "Job should complete")
+
+	# Wait a frame for queue_free to process
+	await get_tree().process_frame
+
+	# Transformed item should be consumed (original tag was raw_food which is consumed)
+	assert_false(is_instance_valid(food), "Transformed food should be consumed")
+
+	agent.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_complete_job_invalid_states() -> void:
+	test("complete_job handles invalid inputs")
+	var board = _create_job_board()
+	var agent := _create_mock_agent()
+	var recipe := _create_test_recipe()
+
+	# Null job
+	var completed: bool = board.complete_job(null, agent)
+	assert_false(completed, "Cannot complete null job")
+
+	# Null agent
+	var job: Job = board.post_job(recipe, 1)
+	board.claim_job(job, agent)
+	job.start()
+	completed = board.complete_job(job, null)
+	assert_false(completed, "Cannot complete with null agent")
+
+	# Job not in board
+	var external_job := Job.new(recipe, 1)
+	external_job.claim(agent)
+	external_job.start()
+	completed = board.complete_job(external_job, agent)
+	assert_false(completed, "Cannot complete job not in board")
+
+	# Cleanup
+	agent.queue_free()
 	_cleanup_job_board(board)

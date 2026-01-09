@@ -270,6 +270,162 @@ func _on_job_completed(job: Job) -> void:
 func _on_job_failed(reason: String, job: Job) -> void:
 	job_failed.emit(job, reason)
 
+
+## Complete a job, spawning outputs, applying motive effects, and consuming items
+## Parameters:
+##   job: The job to complete
+##   agent: The agent completing the job (receives motive effects)
+##   station: Optional station where outputs will be spawned (if null, outputs not spawned)
+## Returns: true if job was completed successfully
+func complete_job(job: Job, agent: Node, station: Station = null) -> bool:
+	if job == null or agent == null:
+		return false
+
+	if not jobs.has(job):
+		return false
+
+	# Job must be IN_PROGRESS to complete
+	if job.state != Job.JobState.IN_PROGRESS:
+		return false
+
+	var recipe: Recipe = job.recipe
+	if recipe == null:
+		job.complete()
+		return true
+
+	# 1. Spawn output items at station output slots
+	if station != null and recipe.has_outputs():
+		_spawn_outputs(recipe, station)
+
+	# 2. Apply motive effects to agent
+	_apply_motive_effects(recipe, agent)
+
+	# 3. Handle items: consume inputs, preserve tools
+	_handle_item_consumption(job, recipe)
+
+	# 4. Complete the job (sets state to COMPLETED, releases reservations)
+	job.complete()
+
+	return true
+
+
+## Spawn output items at station output slots
+func _spawn_outputs(recipe: Recipe, station: Station) -> void:
+	var outputs := recipe.get_outputs()
+
+	for output in outputs:
+		for i in range(output.quantity):
+			# Create new item entity
+			var item := ItemEntity.new()
+			item.item_tag = output.item_tag
+			item.state = ItemEntity.ItemState.RAW  # Default state, could be derived from tag
+
+			# Determine appropriate state from tag
+			if output.item_tag.contains("cooked"):
+				item.state = ItemEntity.ItemState.COOKED
+			elif output.item_tag.contains("prepped"):
+				item.state = ItemEntity.ItemState.PREPPED
+
+			# Find empty output slot
+			var slot_index := station.find_empty_output_slot()
+			if slot_index >= 0:
+				station.place_output_item(item, slot_index)
+			else:
+				# No empty output slot, place as child of station on ground
+				station.add_child(item)
+				item.position = Vector2.ZERO
+				item.set_location(ItemEntity.ItemLocation.ON_GROUND)
+
+
+## Apply recipe motive effects to the agent
+func _apply_motive_effects(recipe: Recipe, agent: Node) -> void:
+	if recipe.motive_effects.is_empty():
+		return
+
+	# Check if agent has a motives property
+	if not agent.has_method("get") and not "motives" in agent:
+		# Try to access motives directly
+		if agent.get("motives") == null:
+			return
+
+	var motives = agent.get("motives")
+	if motives == null:
+		return
+
+	# Apply each motive effect
+	for motive_name in recipe.motive_effects:
+		var effect: float = recipe.motive_effects[motive_name]
+		var motive_type := _motive_name_to_type(motive_name)
+		if motive_type >= 0 and motives.has_method("fulfill"):
+			motives.fulfill(motive_type, effect)
+
+
+## Convert motive name string to MotiveType enum value
+func _motive_name_to_type(motive_name: String) -> int:
+	match motive_name.to_lower():
+		"hunger": return Motive.MotiveType.HUNGER
+		"energy": return Motive.MotiveType.ENERGY
+		"bladder": return Motive.MotiveType.BLADDER
+		"hygiene": return Motive.MotiveType.HYGIENE
+		"fun", "entertainment": return Motive.MotiveType.FUN
+		"social": return Motive.MotiveType.SOCIAL
+		"comfort": return Motive.MotiveType.COMFORT
+		"room": return Motive.MotiveType.ROOM
+		_: return -1
+
+
+## Handle item consumption - consume inputs, preserve tools
+func _handle_item_consumption(job: Job, recipe: Recipe) -> void:
+	var consumed_tags := recipe.get_consumed_input_tags()
+	var tool_tags := recipe.tools
+
+	# Process gathered items
+	var items_to_free: Array[ItemEntity] = []
+
+	for item in job.gathered_items:
+		if not is_instance_valid(item):
+			continue
+
+		# Check if this item should be consumed
+		var original_tag := _get_original_tag(item, recipe)
+
+		if consumed_tags.has(original_tag) or consumed_tags.has(item.item_tag):
+			# This is a consumed input - mark for deletion
+			items_to_free.append(item)
+		elif tool_tags.has(original_tag) or tool_tags.has(item.item_tag):
+			# This is a tool - preserve it (release reservation only)
+			item.release_item()
+		else:
+			# Unknown item - preserve it
+			item.release_item()
+
+	# Free consumed items
+	for item in items_to_free:
+		if is_instance_valid(item):
+			# Remove from any parent
+			if item.get_parent() != null:
+				item.get_parent().remove_child(item)
+			item.queue_free()
+
+
+## Get the original tag of an item before any transforms were applied
+## Used to determine if an item was originally a consumed input
+func _get_original_tag(item: ItemEntity, recipe: Recipe) -> String:
+	# Check if current tag is a transform output
+	for step in recipe.steps:
+		if step.input_transform.is_empty():
+			continue
+
+		# Check if item's current tag is a transform output
+		for input_tag in step.input_transform:
+			var output_tag: String = step.input_transform[input_tag]
+			if output_tag == item.item_tag:
+				# This item was transformed from input_tag
+				return input_tag
+
+	# No transform found, return current tag
+	return item.item_tag
+
 ## Result class for can_start_job validation
 class JobRequirementResult:
 	var can_start: bool = false
