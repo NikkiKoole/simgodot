@@ -20,6 +20,7 @@ TESTS=(
     "test_recipe_tv"
     "test_interruption"
     "test_debug_commands"
+    "test_job_integration"
 )
 
 total_passed=0
