@@ -71,3 +71,46 @@ Note: Despite the name "Godot 3.app", this is actually Godot 4.5.1.
 ### Naming Conventions
 - Avoid using Godot reserved class names (Container, Node, Control, etc.)
 - Prefix custom classes to avoid conflicts (e.g., `ItemContainer` instead of `Container`)
+
+## Testing System
+
+### Test Directory Structure
+- `scripts/tests/` - Test scripts extending TestRunner
+- `scenes/tests/` - Test scenes that run automatically on load
+
+### Running Tests
+Run individual test scenes:
+```bash
+"/Users/nikkikoole/Downloads/Godot 3.app/Contents/MacOS/Godot" --headless --path . res://scenes/tests/test_items.tscn --quit-after 3000
+```
+
+### Creating New Tests
+1. Create a script in `scripts/tests/` extending `TestRunner`
+2. Set `_test_name` in `_ready()`
+3. Override `run_tests()` to call your test methods
+4. Create a scene in `scenes/tests/` with a `TestArea` Node2D child
+5. Attach your test script to the scene root
+
+### TestRunner API
+- `test(name)` - Start a named test
+- `assert_true(condition, message)` - Assert condition is true
+- `assert_false(condition, message)` - Assert condition is false
+- `assert_eq(actual, expected, message)` - Assert equality
+- `assert_neq(actual, not_expected, message)` - Assert inequality
+- `assert_null(value, message)` - Assert value is null
+- `assert_not_null(value, message)` - Assert value is not null
+- `assert_array_size(arr, size, message)` - Assert array length
+- `assert_array_contains(arr, item, message)` - Assert array contains item
+
+### Test Scene Structure
+Test scenes should have:
+- Root node with test script attached
+- `TestArea` (Node2D) at position (200, 150) for spawning test objects
+- `Camera2D` centered on the test area
+- Optional visual background (floor/walls)
+
+### Tips
+- Use `await get_tree().process_frame` when testing `_ready()` behavior
+- Instantiate from preloaded scenes: `const Scene = preload("res://...")`
+- Clean up with `queue_free()` after each test
+- Test global positions account for parent transforms
