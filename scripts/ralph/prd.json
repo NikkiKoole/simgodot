@@ -94,6 +94,7 @@
         "Add current_step_index tracking progress through recipe",
         "Add gathered_items array tracking items agent has collected",
         "Add target_station reference for current work location",
+        "Create test_job.gd and test_job.tscn verifying Job state transitions and properties",
         "Project runs without errors"
       ],
       "priority": 6,
@@ -112,6 +113,7 @@
         "Implement claim_job(job, agent) marking job as CLAIMED",
         "Implement release_job(job) returning job to POSTED state",
         "Add signals: job_posted, job_claimed, job_completed",
+        "Create test_jobboard.gd and test_jobboard.tscn verifying post/claim/release operations",
         "Project runs without errors"
       ],
       "priority": 7,
@@ -128,6 +130,7 @@
         "Check required stations are available (not reserved)",
         "Check required tools are available",
         "Return false with reason if any requirement missing",
+        "Add tests for can_start_job() with valid/invalid requirements to test_jobboard",
         "Project runs without errors"
       ],
       "priority": 8,
@@ -145,6 +148,7 @@
         "Containers' get_available_items() excludes reserved items",
         "Job claiming reserves all required items",
         "Job release/completion unreserves items",
+        "Add tests for reserve/release and container filtering to test_items",
         "Project runs without errors"
       ],
       "priority": 9,
@@ -161,6 +165,7 @@
         "On arrival: agent picks up item (item.location = IN_HAND)",
         "Agent tracks held_items array",
         "After gathering all items, transition to moving to station",
+        "Create test_agent_hauling.gd and scene verifying item pickup behavior",
         "Project runs without errors"
       ],
       "priority": 10,
@@ -178,6 +183,7 @@
         "Progress timer counts down step duration",
         "On step complete: apply input_transform to items",
         "Advance to next step or complete job",
+        "Create test_agent_working.gd and scene verifying step execution and transforms",
         "Project runs without errors"
       ],
       "priority": 11,
@@ -195,6 +201,7 @@
         "All item and station reservations released",
         "INTERRUPTED jobs appear in get_available_jobs()",
         "Agent claiming interrupted job resumes from current_step_index",
+        "Add interruption tests to test_jobboard verifying state preservation",
         "Project runs without errors"
       ],
       "priority": 12,
@@ -212,6 +219,7 @@
         "Consumed inputs are queue_free()'d",
         "Non-consumed tools remain (possibly with changed state)",
         "Job state set to COMPLETED",
+        "Add completion tests verifying motive effects, outputs, and consumed items",
         "Project runs without errors"
       ],
       "priority": 13,
@@ -227,6 +235,7 @@
         "Post job for best matching recipe if not already posted",
         "Agent claims and executes the job",
         "Job priority based on need urgency",
+        "Create test_need_jobs.gd verifying automatic job posting from needs",
         "Project runs without errors"
       ],
       "priority": 14,
@@ -244,6 +253,7 @@
         "Output: 1x cooked_meal",
         "Motive effects: {hunger: 50}",
         "Agent successfully executes full sequence",
+        "Create test_recipe_cook.gd verifying full cooking sequence execution",
         "Project runs without errors"
       ],
       "priority": 15,
@@ -261,6 +271,7 @@
         "Output: none (or dirty_toilet state change)",
         "Motive effects: {bladder: 80}",
         "Agent successfully executes full sequence",
+        "Create test_recipe_toilet.gd verifying full toilet sequence execution",
         "Project runs without errors"
       ],
       "priority": 16,
@@ -278,6 +289,7 @@
         "Steps: 1) tv/turn_on/1s 2) couch/watch/10s 3) tv/turn_off/1s",
         "Motive effects: {entertainment: 40}",
         "Agent successfully executes full sequence",
+        "Create test_recipe_tv.gd verifying full TV watching sequence execution",
         "Project runs without errors"
       ],
       "priority": 17,
@@ -294,6 +306,7 @@
         "Job shows as INTERRUPTED in JobBoard",
         "Second agent can claim and resume the job",
         "Second agent completes cooking from interrupted step",
+        "All interruption assertions implemented as automated tests in test scene",
         "Project runs without errors"
       ],
       "priority": 18,
