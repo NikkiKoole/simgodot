@@ -6,9 +6,10 @@
 - Enums defined within classes using `enum EnumName { VALUE1, VALUE2 }`
 - Signals declared with typed parameters (e.g., `signal value_changed(new_value: float)`)
 - ColorRect named "Sprite2D" used for visual representation in scenes
-- Run Godot validation: `"/Users/nikkikoole/Downloads/Godot 3.app/Contents/MacOS/Godot" --headless --quit`
+- Run Godot validation: `"/Users/nikkikoole/Downloads/Godot 3.app/Contents/MacOS/Godot" --headless --import --quit` (use --import to catch script errors)
 
-- Container class uses typed arrays: `Array[ItemEntity]` and `Array[String]`
+- ItemContainer class (renamed from Container to avoid Godot reserved name conflict) uses typed arrays: `Array[ItemEntity]` and `Array[String]`
+- Avoid Godot reserved class names: Container, Node, Control, etc. - use prefixes like ItemContainer
 - Station uses Marker2D children for slots/footprint - auto-discovered by name prefix (InputSlot*, OutputSlot*, AgentFootprint)
 - Slot items tracked via Dictionary mapping slot_index to ItemEntity
 
@@ -38,7 +39,7 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 
 ## 2026-01-09 - US-002
 Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
-- Implemented Container class extending Node2D for storing ItemEntity references
+- Implemented ItemContainer class extending Node2D for storing ItemEntity references (renamed from Container to avoid Godot reserved name conflict)
 - Added capacity property with has_space() check
 - Added allowed_tags array for filtering (empty = allow all)
 - Implemented add_item(), remove_item(), find_item_by_tag() methods
@@ -49,10 +50,11 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - scripts/container.gd (new)
   - scenes/objects/container.tscn (new)
 - **Learnings for future iterations:**
-  - Container reparents items when added (item becomes child of container)
+  - ItemContainer reparents items when added (item becomes child of container)
   - Use typed arrays like `Array[ItemEntity]` for type safety
-  - Container uses is_tag_allowed() to validate before adding items
+  - ItemContainer uses is_tag_allowed() to validate before adding items
   - get_available_items() filters out reserved items using item.is_reserved()
+  - IMPORTANT: "Container" is a reserved Godot class name - use ItemContainer instead
 
 ---
 

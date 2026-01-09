@@ -1,4 +1,4 @@
-class_name Container
+class_name ItemContainer
 extends Node2D
 
 ## Container for storing multiple ItemEntity instances

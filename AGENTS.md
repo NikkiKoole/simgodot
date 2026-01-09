@@ -28,10 +28,12 @@ This is a Godot 4.5 simulation game inspired by The Sims, featuring NPCs with mo
 
 Run Godot validation with:
 ```bash
-"/Users/nikkikoole/Downloads/Godot 3.app/Contents/MacOS/Godot" --headless --quit
+"/Users/nikkikoole/Downloads/Godot 3.app/Contents/MacOS/Godot" --headless --import --quit
 ```
 
 Note: Despite the name "Godot 3.app", this is actually Godot 4.5.1.
+
+**Important**: Use `--import` flag to catch script errors (like reserved class names). Without it, Godot just runs the project briefly without full validation.
 
 ## Key Systems
 
@@ -51,8 +53,13 @@ Note: Despite the name "Godot 3.app", this is actually Godot 4.5.1.
 - Reservation system for agent claiming
 
 ### Container System (`scripts/container.gd`)
+- Class name is `ItemContainer` (not `Container` - that's a reserved Godot class)
 - Stores multiple ItemEntity references with capacity limits
 - Tag filtering via `allowed_tags` array (empty = allow all)
 - Key methods: `add_item()`, `remove_item()`, `find_item_by_tag()`
 - `get_available_items()` returns only unreserved items
 - Items are reparented to container when added
+
+### Naming Conventions
+- Avoid using Godot reserved class names (Container, Node, Control, etc.)
+- Prefix custom classes to avoid conflicts (e.g., `ItemContainer` instead of `Container`)
