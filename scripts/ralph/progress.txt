@@ -9,6 +9,30 @@
 - Run Godot validation: `"/Users/nikkikoole/Downloads/Godot 3.app/Contents/MacOS/Godot" --headless --quit`
 
 - Container class uses typed arrays: `Array[ItemEntity]` and `Array[String]`
+- Station uses Marker2D children for slots/footprint - auto-discovered by name prefix (InputSlot*, OutputSlot*, AgentFootprint)
+- Slot items tracked via Dictionary mapping slot_index to ItemEntity
+
+---
+
+## 2026-01-09 - US-003
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented Station class extending Node2D for smart stations (stove, toilet, TV)
+- Added station_tag property for identifying station type
+- Added input_slots and output_slots as arrays of Marker2D
+- Added agent_footprint Marker2D for agent standing position
+- Added reserved_by property with reserve(), release(), is_available() methods
+- Implemented get_item_in_slot(), place_item_in_slot() methods with input/output variants
+- Added auto-discovery of Marker2D children by name prefix (InputSlot*, OutputSlot*, AgentFootprint)
+- Created station.tscn scene with blue-gray ColorRect visual (48x48 pixels)
+- Files changed:
+  - scripts/station.gd (new)
+  - scenes/objects/station.tscn (new)
+- **Learnings for future iterations:**
+  - Station uses Dictionary (input_slot_items, output_slot_items) to track items by slot index
+  - Marker2D nodes auto-discovered by name prefix for convenience
+  - Items placed in slots are reparented to station and positioned at slot marker
+  - get_agent_position() returns global position where agent should stand
+  - Convenience methods like get_input_item(), place_output_item() simplify common operations
 
 ---
 
