@@ -489,3 +489,34 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - JobPanel auto-updates via JobBoard signals, so no manual refresh needed after posting
 
 ---
+
+## 2026-01-09 - US-017
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created PathVisualization node (Node2D) for drawing NPC navigation paths
+- Draws path as light blue line from NPC position to final destination
+- Blue dots (4px radius) at each intermediate waypoint
+- Orange marker (8px radius) at final destination/target
+- Green marker (6px radius) at current NPC position
+- Path updates in real-time via _process() calling queue_redraw()
+- PathVisualization draws only remaining path (from current path_index onwards)
+- Added "Show Path" checkbox toggle in NPCInspector panel
+- Toggle controls path visibility via callback to DebugUI
+- Path visualization cleared when NPC deselected or non-NPC entity selected
+- All 12 test suites pass (1038 total assertions)
+- Godot --import validation passes
+
+**Files changed:**
+- scripts/path_visualization.gd (new)
+- scenes/path_visualization.tscn (new)
+- scripts/npc_inspector.gd (added path toggle checkbox, callback, visibility methods)
+- scenes/npc_inspector.tscn (added PathToggleContainer with checkbox)
+- scripts/debug_ui.gd (added PathVisualizationScene preload, _setup_path_visualization, _clear_path_visualization, _on_path_visibility_changed, _get_level_node)
+
+**Learnings for future iterations:**
+- World-space drawing requires converting world coordinates to local via `world_pos - global_position`
+- Use Node2D.draw_line() and draw_circle() in _draw() for custom visualizations
+- Callback pattern via Callable allows inspector to communicate with DebugUI without tight coupling
+- z_index = 50 ensures visualization draws above game elements but below UI
+- queue_redraw() in _process() provides real-time updates as NPC moves
+
+---
