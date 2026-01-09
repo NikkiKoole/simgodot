@@ -14,7 +14,7 @@ var selected_entity: Node2D = null
 var original_modulate: Color = Color.WHITE
 var pulse_time: float = 0.0
 const PULSE_SPEED := 4.0
-const HIGHLIGHT_TINT := Color(1.0, 1.0, 0.5, 1.0)  # Yellowish tint
+const HIGHLIGHT_TINT := Color(1.0, 0.0, 0.0, 1.0)  # Yellowish tint
 
 # Click detection collision mask (layer 8 for clickable areas, layer 2 for NPCs)
 # Collision layers are bit masks: layer N = 2^(N-1), so layer 8 = 128, layer 2 = 2

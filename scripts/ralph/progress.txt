@@ -244,3 +244,38 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Connect to existing singleton signals (JobBoard, DebugCommands) for real-time updates
 
 ---
+
+## 2026-01-09 - US-009
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented click-to-select system for NPCs, Stations, Items, and Containers
+- Added ClickArea (Area2D with CollisionShape2D) to all selectable entity scenes:
+  - npc.tscn: CircleShape2D matching body collision
+  - station.tscn, container.tscn: RectangleShape2D matching visual size
+  - item_entity.tscn: CircleShape2D with 8px radius
+- Collision layer 8 (bitmask 128) used for click detection, separate from physics
+- Click detection in debug_ui.gd using PhysicsPointQueryParameters2D
+- Screen-to-world coordinate conversion via camera canvas transform
+- Entity priority for overlapping clicks: Items(4) > NPCs(3) > Stations(2) > Containers(1)
+- Visual highlight via modulate pulsing (yellowish tint, oscillates 0.7-1.0 brightness)
+- Selection state tracked in DebugUI, responds to DebugCommands signals
+- Modified camera.gd to pass left/right clicks through for selection handling
+- UI bounds checking to skip click handling when clicking on side panel or bottom bar
+
+**Files changed:**
+- scenes/npc.tscn (added ClickArea with CircleShape2D)
+- scenes/objects/station.tscn (added ClickArea with RectangleShape2D)
+- scenes/objects/item_entity.tscn (added ClickArea with CircleShape2D)
+- scenes/objects/container.tscn (added ClickArea with RectangleShape2D)
+- scripts/debug_ui.gd (added click detection, coordinate conversion, highlight handling)
+- scripts/camera.gd (modified to let left/right clicks pass through)
+- scripts/selection_highlight.gd (removed - highlight handled in DebugUI)
+
+**Learnings for future iterations:**
+- Collision layers are bitmasks: layer N = 2^(N-1), so layer 8 = 128
+- Use `_input()` instead of `_unhandled_input()` when camera may consume events
+- Camera canvas transform affine_inverse() converts screen coords to world coords
+- Dynamic nodes with set_script() don't have lifecycle functions called - handle logic in parent
+- PhysicsPointQueryParameters2D with collide_with_areas=true detects Area2D nodes
+- monitorable=true required on Area2D for point queries to detect it
+
+---

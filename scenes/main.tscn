@@ -1,8 +1,8 @@
 [gd_scene load_steps=5 format=3 uid="uid://main001"]
 
-[ext_resource type="Script" path="res://scripts/level.gd" id="1_level"]
+[ext_resource type="Script" uid="uid://dlecc120uyefb" path="res://scripts/level.gd" id="1_level"]
 [ext_resource type="PackedScene" uid="uid://player001" path="res://scenes/player.tscn" id="2_player"]
-[ext_resource type="Script" path="res://scripts/camera.gd" id="3_camera"]
+[ext_resource type="Script" uid="uid://byprin8ihgqfc" path="res://scripts/camera.gd" id="3_camera"]
 [ext_resource type="PackedScene" uid="uid://debugui001" path="res://scenes/debug_ui.tscn" id="4_debug_ui"]
 
 [node name="Main" type="Node2D"]
