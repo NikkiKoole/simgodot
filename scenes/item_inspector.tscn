@@ -1,0 +1,35 @@
+[gd_scene load_steps=2 format=3 uid="uid://item_inspector0001"]
+
+[ext_resource type="Script" path="res://scripts/item_inspector.gd" id="1_item_inspector"]
+
+[node name="ItemInspector" type="VBoxContainer"]
+script = ExtResource("1_item_inspector")
+theme_override_constants/separation = 4
+
+[node name="NameLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Item Name"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="TagLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Tag: item_tag"
+
+[node name="StateLabel" type="Label" parent="."]
+layout_mode = 2
+text = "State: Raw"
+
+[node name="LocationLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Location: ON_GROUND"
+
+[node name="ContainerLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Holder: None"
+
+[node name="ReservedLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Reserved: No"

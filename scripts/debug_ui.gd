@@ -6,6 +6,8 @@ extends CanvasLayer
 # Preload inspector scenes
 const NPCInspectorScene = preload("res://scenes/npc_inspector.tscn")
 const StationInspectorScene = preload("res://scenes/station_inspector.tscn")
+const ItemInspectorScene = preload("res://scenes/item_inspector.tscn")
+const ContainerInspectorScene = preload("res://scenes/container_inspector.tscn")
 
 # References to UI sections for child scripts to access
 @onready var inspector_section: VBoxContainer = $SidePanel/MarginContainer/VBoxContainer/InspectorSection
@@ -16,6 +18,8 @@ const StationInspectorScene = preload("res://scenes/station_inspector.tscn")
 # Inspector panels - instantiated on demand
 var npc_inspector: Node = null
 var station_inspector: Node = null
+var item_inspector: Node = null
+var container_inspector: Node = null
 
 # Selection outline - drawn as rectangle around selected entity
 var selected_entity: Node2D = null
@@ -358,8 +362,12 @@ func _update_inspector_for_entity(entity: Node) -> void:
 			_show_npc_inspector(entity)
 		"station":
 			_show_station_inspector(entity)
+		"item":
+			_show_item_inspector(entity)
+		"container":
+			_show_container_inspector(entity)
 		_:
-			# For other entity types, show placeholder for now
+			# For unknown entity types, show placeholder
 			_clear_all_inspectors()
 			if placeholder is Label:
 				placeholder.visible = true
@@ -396,12 +404,46 @@ func _show_station_inspector(station: Node) -> void:
 	station_inspector.visible = true
 
 
+## Show the Item inspector panel for the given ItemEntity
+func _show_item_inspector(item: Node) -> void:
+	# Hide other inspectors
+	_hide_all_inspectors()
+
+	# Create Item inspector if it doesn't exist
+	if item_inspector == null:
+		item_inspector = ItemInspectorScene.instantiate()
+		inspector_section.add_child(item_inspector)
+
+	# Set the Item to inspect
+	item_inspector.set_item(item)
+	item_inspector.visible = true
+
+
+## Show the Container inspector panel for the given ItemContainer
+func _show_container_inspector(container: Node) -> void:
+	# Hide other inspectors
+	_hide_all_inspectors()
+
+	# Create Container inspector if it doesn't exist
+	if container_inspector == null:
+		container_inspector = ContainerInspectorScene.instantiate()
+		inspector_section.add_child(container_inspector)
+
+	# Set the Container to inspect
+	container_inspector.set_container(container)
+	container_inspector.visible = true
+
+
 ## Hide all inspector panels
 func _hide_all_inspectors() -> void:
 	if npc_inspector != null:
 		npc_inspector.visible = false
 	if station_inspector != null:
 		station_inspector.visible = false
+	if item_inspector != null:
+		item_inspector.visible = false
+	if container_inspector != null:
+		container_inspector.visible = false
 
 
 ## Clear all inspectors and show placeholder
@@ -414,6 +456,10 @@ func _clear_all_inspectors() -> void:
 		npc_inspector.clear()
 	if station_inspector != null:
 		station_inspector.clear()
+	if item_inspector != null:
+		item_inspector.clear()
+	if container_inspector != null:
+		container_inspector.clear()
 
 	# Show placeholder
 	var placeholder := inspector_section.get_node_or_null("PlaceholderLabel")
