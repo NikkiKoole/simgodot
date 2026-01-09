@@ -405,3 +405,36 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Job list header row with labels improves readability of dynamic content
 
 ---
+
+## 2026-01-09 - US-014
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created SpawnTools panel in ToolsSection with three spawning tools
+- SpawnItemTool: dropdown with 10 item tags (raw_food, prepped_food, cooked_meal, etc.)
+- SpawnStationTool: dropdown with all 8 station types from DebugCommands.VALID_STATION_TYPES
+- SpawnNPCTool: simple button to place NPC
+- Click in world after selecting spawns entity at that position
+- Stations snap to grid automatically via DebugCommands.snap_to_grid()
+- Visual preview shown before click confirms placement:
+  - Items: green semi-transparent 16x16 square
+  - Stations: station-colored semi-transparent 32x32 square (uses STATION_COLORS)
+  - NPCs: blue semi-transparent 24x24 square
+- Preview follows mouse, hides when over UI panels
+- Right-click or Cancel button exits spawn mode without placing
+- All spawns go through DebugCommands API (spawn_item, spawn_station, spawn_npc)
+- Integrated into DebugUI: SpawnTools instantiated in _setup_tools_section(), replaces placeholder
+- Click handling coordination: debug_ui.gd defers to spawn_tools when spawn mode is active
+- All 12 test suites pass (1038 total assertions)
+
+**Files changed:**
+- scripts/spawn_tools.gd (new)
+- scenes/spawn_tools.tscn (new)
+- scripts/debug_ui.gd (added SpawnToolsScene preload, spawn_tools variable, _setup_tools_section(), spawn mode check in _input)
+
+**Learnings for future iterations:**
+- Use SpawnMode enum to track current spawn state (NONE, ITEM, STATION, NPC)
+- Preview node should be added to level/game world, not UI, for correct world-space positioning
+- When multiple UI components handle clicks, check spawn mode first to avoid conflicts
+- OptionButton.item_selected signal index corresponds to array order for mapping selections
+- ColorRect with mouse_filter=IGNORE prevents preview from blocking click detection
+
+---

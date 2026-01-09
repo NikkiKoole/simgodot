@@ -250,7 +250,7 @@
         "Project runs without errors"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

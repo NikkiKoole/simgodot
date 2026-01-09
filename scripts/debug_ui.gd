@@ -9,6 +9,9 @@ const StationInspectorScene = preload("res://scenes/station_inspector.tscn")
 const ItemInspectorScene = preload("res://scenes/item_inspector.tscn")
 const ContainerInspectorScene = preload("res://scenes/container_inspector.tscn")
 
+# Preload tools scenes
+const SpawnToolsScene = preload("res://scenes/spawn_tools.tscn")
+
 # References to UI sections for child scripts to access
 @onready var inspector_section: VBoxContainer = $SidePanel/MarginContainer/VBoxContainer/InspectorSection
 @onready var tools_section: VBoxContainer = $SidePanel/MarginContainer/VBoxContainer/ToolsSection
@@ -19,6 +22,9 @@ var npc_inspector: Node = null
 var station_inspector: Node = null
 var item_inspector: Node = null
 var container_inspector: Node = null
+
+# Tools panels - instantiated on demand
+var spawn_tools: Node = null
 
 # Selection outline - drawn as rectangle around selected entity
 var selected_entity: Node2D = null
@@ -43,6 +49,9 @@ func _ready() -> void:
 
 	# Find camera for coordinate conversion
 	_find_camera()
+
+	# Initialize tools section
+	_setup_tools_section()
 
 
 func _find_camera() -> void:
@@ -82,6 +91,10 @@ func _process(_delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			# Check if spawn tools is in active spawn mode - if so, let it handle
+			if spawn_tools != null and spawn_tools.current_mode != spawn_tools.SpawnMode.NONE:
+				return
+
 			# Check if click is over any UI control - if so, don't handle
 			# This properly handles buttons, sliders, and other interactive elements
 			var mouse_pos: Vector2 = event.position
@@ -455,3 +468,16 @@ func _clear_all_inspectors() -> void:
 	if placeholder is Label:
 		placeholder.visible = true
 		placeholder.text = "Select an entity to inspect"
+
+
+## Setup the tools section with spawn tools
+func _setup_tools_section() -> void:
+	# Remove placeholder label from tools section
+	var placeholder := tools_section.get_node_or_null("PlaceholderLabel")
+	if placeholder != null:
+		placeholder.queue_free()
+
+	# Add spawn tools
+	if spawn_tools == null:
+		spawn_tools = SpawnToolsScene.instantiate()
+		tools_section.add_child(spawn_tools)
