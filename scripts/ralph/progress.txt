@@ -1,6 +1,8 @@
 ## Codebase Patterns
 - This is a Godot 4.5 project using GDScript
-- Use `class_name` at top of scripts for global class registration
+- Use `class_name` at top of scripts for global class registration (but NOT for autoload singletons)
+- Autoload singletons: Do NOT use `class_name` - causes "hides an autoload singleton" error
+- Lambda variable capture: GDScript lambdas capture by value, not reference. Use Dictionary for mutable state tracking in test signal handlers
 - Use type hints throughout (e.g., `var name: String = ""`)
 - Use `@export` for inspector-visible properties
 - Enums defined within classes using `enum EnumName { VALUE1, VALUE2 }`
@@ -19,6 +21,32 @@
 - Job class extends RefCounted (not Node2D or Resource) for lightweight state tracking objects
 - Use static var for ID counters in classes that need unique IDs (e.g., `static var _next_id: int = 0`)
 - Test runner auto-quits in headless mode with exit code 0 (pass) or 1 (fail)
+
+---
+
+## 2026-01-09 - US-007
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented JobBoard singleton extending Node for central job management
+- Registered as autoload in project.godot: `JobBoard="*res://scripts/job_board.gd"`
+- Added core methods: post_job(), get_available_jobs(), claim_job(), release_job()
+- Added motive-based queries: get_jobs_for_motive(), get_available_jobs_for_motive()
+- Added priority selection: get_highest_priority_job(), get_highest_priority_job_for_motive()
+- Added signals: job_posted, job_claimed, job_completed, job_released, job_failed
+- Added helper methods: get_job_by_id(), get_jobs_by_state(), get_jobs_for_agent()
+- Added cleanup: remove_job(), cleanup_finished_jobs(), clear_all_jobs()
+- Created comprehensive test suite with 73 passing tests
+- Updated AGENTS.md with JobBoard documentation and lambda capture gotcha
+- Files changed:
+  - scripts/job_board.gd (new)
+  - scripts/tests/test_jobboard.gd (new)
+  - scenes/tests/test_jobboard.tscn (new)
+  - project.godot (added autoload)
+  - AGENTS.md (updated)
+- **Learnings for future iterations:**
+  - Autoload singletons must NOT use `class_name` - causes "hides an autoload singleton" error
+  - When testing signals with lambdas, use Dictionary to track state (lambdas capture by value, not reference)
+  - Autoloads are registered in project.godot under [autoload] section with `*` prefix for Node scripts
+  - Test files for autoloads should preload the script and create instances rather than relying on the autoload
 
 ---
 
