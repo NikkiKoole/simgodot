@@ -14,6 +14,7 @@ const SpawnToolsScene = preload("res://scenes/spawn_tools.tscn")
 const WallPaintToolScene = preload("res://scenes/wall_paint_tool.tscn")
 const PostJobToolScene = preload("res://scenes/post_job_tool.tscn")
 const PathVisualizationScene = preload("res://scenes/path_visualization.tscn")
+const SlotVisualizationScene = preload("res://scenes/slot_visualization.tscn")
 
 # References to UI sections for child scripts to access
 @onready var inspector_section: VBoxContainer = $SidePanel/ScrollContainer/MarginContainer/VBoxContainer/InspectorSection
@@ -33,6 +34,9 @@ var post_job_tool: Node = null
 
 # Path visualization - instantiated on demand
 var path_visualization: Node2D = null
+
+# Slot visualization - instantiated on demand
+var slot_visualization: Node2D = null
 
 # Selection outline - drawn as rectangle around selected entity
 var selected_entity: Node2D = null
@@ -420,10 +424,15 @@ func _show_station_inspector(station: Node) -> void:
 	if station_inspector == null:
 		station_inspector = StationInspectorScene.instantiate()
 		inspector_section.add_child(station_inspector)
+		# Set up slot visibility callback
+		station_inspector.on_slots_visibility_changed = _on_slots_visibility_changed
 
 	# Set the Station to inspect
 	station_inspector.set_station(station)
 	station_inspector.visible = true
+
+	# Set up slot visualization for this station
+	_setup_slot_visualization(station)
 
 
 ## Show the Item inspector panel for the given ItemEntity
@@ -469,6 +478,9 @@ func _hide_all_inspectors() -> void:
 
 	# Clear path visualization when hiding inspectors (switching entity types)
 	_clear_path_visualization()
+
+	# Clear slot visualization when hiding inspectors (switching entity types)
+	_clear_slot_visualization()
 
 
 ## Clear all inspectors and show placeholder
@@ -575,3 +587,45 @@ func _get_level_node() -> Node:
 
 	# Fallback: return current scene root
 	return get_tree().current_scene
+
+
+## Set up slot visualization for a station
+func _setup_slot_visualization(station: Node) -> void:
+	# Clear any existing visualization
+	_clear_slot_visualization()
+
+	if station == null or not is_instance_valid(station):
+		return
+
+	# Create slot visualization node
+	slot_visualization = SlotVisualizationScene.instantiate()
+
+	# Add to the level/world so it draws in world space
+	var level := _get_level_node()
+	if level != null:
+		level.add_child(slot_visualization)
+	else:
+		# Fallback: add to scene root
+		var root := get_tree().current_scene
+		if root != null:
+			root.add_child(slot_visualization)
+
+	# Set the station to visualize
+	slot_visualization.set_station(station)
+
+	# Apply current visibility from inspector toggle
+	if station_inspector != null:
+		slot_visualization.set_slots_visible(station_inspector.is_slots_visible())
+
+
+## Clear slot visualization
+func _clear_slot_visualization() -> void:
+	if slot_visualization != null and is_instance_valid(slot_visualization):
+		slot_visualization.queue_free()
+	slot_visualization = null
+
+
+## Handle slot visibility toggle from inspector
+func _on_slots_visibility_changed(is_visible: bool) -> void:
+	if slot_visualization != null and is_instance_valid(slot_visualization):
+		slot_visualization.set_slots_visible(is_visible)

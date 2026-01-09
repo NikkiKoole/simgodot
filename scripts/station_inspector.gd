@@ -1,7 +1,7 @@
 extends VBoxContainer
 ## Station Inspector Panel - Shows detailed Station information when one is selected.
 ## Displays: name, tags, slot contents, current user, capacity
-## Also provides tag editing functionality
+## Also provides tag editing functionality and slot visualization toggle
 
 # Reference to the currently inspected Station
 var current_station: Station = null
@@ -17,6 +17,10 @@ var current_station: Station = null
 @onready var capacity_label: Label = $CapacityLabel
 @onready var input_slots_container: VBoxContainer = $InputSlotsContainer
 @onready var output_slots_container: VBoxContainer = $OutputSlotsContainer
+@onready var slots_toggle_checkbox: CheckBox = $SlotsToggleContainer/SlotsToggleCheckBox
+
+# Slot visualization callback - set by DebugUI
+var on_slots_visibility_changed: Callable
 
 # Common tag suggestions
 const TAG_SUGGESTIONS: Array[String] = ["counter", "stove", "sink", "seating", "fridge", "toilet", "tv", "cooking", "prep", "storage"]
@@ -29,6 +33,10 @@ func _ready() -> void:
 
 	# Create suggestion buttons
 	_create_suggestion_buttons()
+
+	# Connect slots toggle checkbox
+	if slots_toggle_checkbox != null:
+		slots_toggle_checkbox.toggled.connect(_on_slots_toggle_changed)
 
 	# Hide initially until a station is selected
 	visible = false
@@ -212,3 +220,22 @@ func _remove_tag(tag: String) -> void:
 	if current_station.station_tag == tag:
 		current_station.station_tag = ""
 	_update_display()
+
+
+## Handle slots visibility toggle
+func _on_slots_toggle_changed(is_visible: bool) -> void:
+	if on_slots_visibility_changed.is_valid():
+		on_slots_visibility_changed.call(is_visible)
+
+
+## Get current slots visibility state
+func is_slots_visible() -> bool:
+	if slots_toggle_checkbox != null:
+		return slots_toggle_checkbox.button_pressed
+	return true
+
+
+## Set slots visibility state (used when switching stations)
+func set_slots_visible(is_visible: bool) -> void:
+	if slots_toggle_checkbox != null:
+		slots_toggle_checkbox.button_pressed = is_visible

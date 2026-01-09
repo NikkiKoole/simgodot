@@ -66,3 +66,14 @@ theme_override_constants/separation = 2
 [node name="OutputSlotsContainer" type="VBoxContainer" parent="."]
 layout_mode = 2
 theme_override_constants/separation = 2
+
+[node name="HSeparator4" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="SlotsToggleContainer" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="SlotsToggleCheckBox" type="CheckBox" parent="SlotsToggleContainer"]
+layout_mode = 2
+button_pressed = true
+text = "Show Slots"
