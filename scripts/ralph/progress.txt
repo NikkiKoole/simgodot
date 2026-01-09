@@ -3,12 +3,19 @@
 - Use GDScript explicit type annotations for variables assigned from function returns (e.g., `var x: bool = func()`) to avoid type inference errors
 - Use `is_instance_valid(node)` instead of `node != null` for null checks - handles both null and freed nodes
 - Test files follow pattern: `test_*.gd` with matching `test_*.tscn` scene
-- Stations use tags array for recipe matching (e.g., ["counter"], ["stove", "cooking"])
+- Stations use single station_tag string for recipe matching (multi-tag support could be future PRD)
 - Items track location via LocationState enum: ON_GROUND, IN_CONTAINER, AT_STATION, HELD_BY_NPC
 - Jobs track progress via current_step_index through recipe steps array
 - JobBoard is autoload singleton for global job management
 - Recipes are .tres Resource files in resources/recipes/
-- DebugCommands will be the API layer - all debug functionality flows through it for testability
+- DebugCommands is the API layer - all debug functionality flows through it for testability
+
+## Future Improvements (from code review)
+
+- Extract BaseInspector class to reduce duplication across npc_inspector, station_inspector, item_inspector, container_inspector
+- Add comments to private helper methods in complex scripts
+- Make PostJobTool load recipes dynamically from RecipeRegistry instead of hardcoding
+- Consider multi-tag support for stations (would require changes to Station, RecipeStep matching, save/load)
 
 ---
 
