@@ -113,3 +113,5 @@ If there are still stories with `passes: false`, end your response normally (ano
 - Commit frequently
 - Keep CI green
 - Read the Codebase Patterns section in progress.txt before starting
+
+godot is over at "/Users/nikkikoole/Downloads/Godot 3.app/Contents/MacOS/Godot"

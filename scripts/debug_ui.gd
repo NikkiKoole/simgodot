@@ -13,6 +13,7 @@ const ContainerInspectorScene = preload("res://scenes/container_inspector.tscn")
 const SpawnToolsScene = preload("res://scenes/spawn_tools.tscn")
 const WallPaintToolScene = preload("res://scenes/wall_paint_tool.tscn")
 const PostJobToolScene = preload("res://scenes/post_job_tool.tscn")
+const PathVisualizationScene = preload("res://scenes/path_visualization.tscn")
 
 # References to UI sections for child scripts to access
 @onready var inspector_section: VBoxContainer = $SidePanel/ScrollContainer/MarginContainer/VBoxContainer/InspectorSection
@@ -29,6 +30,9 @@ var container_inspector: Node = null
 var spawn_tools: Node = null
 var wall_paint_tool: Node = null
 var post_job_tool: Node = null
+
+# Path visualization - instantiated on demand
+var path_visualization: Node2D = null
 
 # Selection outline - drawn as rectangle around selected entity
 var selected_entity: Node2D = null
@@ -278,6 +282,9 @@ func _on_entity_deselected() -> void:
 	print("[DebugUI] Selection cleared")
 	selected_entity = null
 
+	# Clear path visualization
+	_clear_path_visualization()
+
 	# Clear inspector panel
 	_clear_all_inspectors()
 
@@ -393,10 +400,15 @@ func _show_npc_inspector(npc: Node) -> void:
 	if npc_inspector == null:
 		npc_inspector = NPCInspectorScene.instantiate()
 		inspector_section.add_child(npc_inspector)
+		# Set up path visibility callback
+		npc_inspector.on_path_visibility_changed = _on_path_visibility_changed
 
 	# Set the NPC to inspect
 	npc_inspector.set_npc(npc)
 	npc_inspector.visible = true
+
+	# Set up path visualization for this NPC
+	_setup_path_visualization(npc)
 
 
 ## Show the Station inspector panel for the given Station
@@ -455,6 +467,9 @@ func _hide_all_inspectors() -> void:
 	if container_inspector != null:
 		container_inspector.visible = false
 
+	# Clear path visualization when hiding inspectors (switching entity types)
+	_clear_path_visualization()
+
 
 ## Clear all inspectors and show placeholder
 func _clear_all_inspectors() -> void:
@@ -507,3 +522,56 @@ func _setup_tools_section() -> void:
 	if post_job_tool == null:
 		post_job_tool = PostJobToolScene.instantiate()
 		tools_section.add_child(post_job_tool)
+
+
+## Set up path visualization for an NPC
+func _setup_path_visualization(npc: Node) -> void:
+	# Clear any existing visualization
+	_clear_path_visualization()
+
+	if npc == null or not is_instance_valid(npc):
+		return
+
+	# Create path visualization node
+	path_visualization = PathVisualizationScene.instantiate()
+
+	# Add to the level/world so it draws in world space
+	var level := _get_level_node()
+	if level != null:
+		level.add_child(path_visualization)
+	else:
+		# Fallback: add to scene root
+		var root := get_tree().current_scene
+		if root != null:
+			root.add_child(path_visualization)
+
+	# Set the NPC to visualize
+	path_visualization.set_npc(npc)
+
+	# Apply current visibility from inspector toggle
+	if npc_inspector != null:
+		path_visualization.set_path_visible(npc_inspector.is_path_visible())
+
+
+## Clear path visualization
+func _clear_path_visualization() -> void:
+	if path_visualization != null and is_instance_valid(path_visualization):
+		path_visualization.queue_free()
+	path_visualization = null
+
+
+## Handle path visibility toggle from inspector
+func _on_path_visibility_changed(is_visible: bool) -> void:
+	if path_visualization != null and is_instance_valid(path_visualization):
+		path_visualization.set_path_visible(is_visible)
+
+
+## Get the level node for spawning world-space objects
+func _get_level_node() -> Node:
+	# Try to find level by group
+	var levels := get_tree().get_nodes_in_group("level")
+	if levels.size() > 0:
+		return levels[0]
+
+	# Fallback: return current scene root
+	return get_tree().current_scene

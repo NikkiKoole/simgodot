@@ -13,6 +13,10 @@ var current_npc: Node = null
 @onready var held_item_label: Label = $HeldItemLabel
 @onready var motives_container: VBoxContainer = $MotivesContainer
 @onready var buttons_container: HBoxContainer = $ButtonsContainer
+@onready var path_toggle_checkbox: CheckBox = $PathToggleContainer/PathToggleCheckBox
+
+# Path visualization callback - set by DebugUI
+var on_path_visibility_changed: Callable
 
 # Motive slider references (created dynamically)
 var motive_sliders: Dictionary = {}  # {motive_name: HSlider}
@@ -32,6 +36,10 @@ func _ready() -> void:
 
 	# Create quick action buttons
 	_create_quick_buttons()
+
+	# Connect path toggle checkbox
+	if path_toggle_checkbox != null:
+		path_toggle_checkbox.toggled.connect(_on_path_toggle_changed)
 
 	# Hide initially until an NPC is selected
 	visible = false
@@ -232,3 +240,22 @@ func _on_reset_motives_pressed() -> void:
 	}
 	DebugCommands.set_npc_motives(current_npc, full_motives)
 	_update_slider_values()
+
+
+## Handle path visibility toggle
+func _on_path_toggle_changed(is_visible: bool) -> void:
+	if on_path_visibility_changed.is_valid():
+		on_path_visibility_changed.call(is_visible)
+
+
+## Get current path visibility state
+func is_path_visible() -> bool:
+	if path_toggle_checkbox != null:
+		return path_toggle_checkbox.button_pressed
+	return true
+
+
+## Set path visibility state (used when switching NPCs)
+func set_path_visible(is_visible: bool) -> void:
+	if path_toggle_checkbox != null:
+		path_toggle_checkbox.button_pressed = is_visible
