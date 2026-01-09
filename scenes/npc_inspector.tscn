@@ -1,0 +1,47 @@
+[gd_scene load_steps=2 format=3 uid="uid://npc_inspector001"]
+
+[ext_resource type="Script" path="res://scripts/npc_inspector.gd" id="1_npc_inspector"]
+
+[node name="NPCInspector" type="VBoxContainer"]
+script = ExtResource("1_npc_inspector")
+theme_override_constants/separation = 4
+
+[node name="NameLabel" type="Label" parent="."]
+layout_mode = 2
+text = "NPC 0"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="StateLabel" type="Label" parent="."]
+layout_mode = 2
+text = "State: IDLE"
+
+[node name="JobLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Job: None"
+autowrap_mode = 2
+
+[node name="HeldItemLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Held Item: Empty"
+
+[node name="HSeparator2" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="MotivesLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Motives"
+horizontal_alignment = 1
+
+[node name="MotivesContainer" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="HSeparator3" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="ButtonsContainer" type="HBoxContainer" parent="."]
+layout_mode = 2
+alignment = 1

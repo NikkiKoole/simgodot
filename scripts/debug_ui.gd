@@ -3,11 +3,17 @@ extends CanvasLayer
 ## This UI is always visible and provides access to entity inspection and spawn tools.
 ## The UI panels are positioned to avoid blocking the main game viewport.
 
+# Preload inspector scenes
+const NPCInspectorScene = preload("res://scenes/npc_inspector.tscn")
+
 # References to UI sections for child scripts to access
 @onready var inspector_section: VBoxContainer = $SidePanel/MarginContainer/VBoxContainer/InspectorSection
 @onready var tools_section: VBoxContainer = $SidePanel/MarginContainer/VBoxContainer/ToolsSection
 @onready var bottom_bar: PanelContainer = $BottomBar
 @onready var job_status_label: Label = $BottomBar/MarginContainer/HBoxContainer/JobStatusLabel
+
+# Inspector panels - instantiated on demand
+var npc_inspector: Node = null
 
 # Selection outline - drawn as rectangle around selected entity
 var selected_entity: Node2D = null
@@ -245,7 +251,7 @@ func _on_entity_selected(entity: Node) -> void:
 		selected_entity = null
 
 	# Update inspector panel based on entity type
-	_update_inspector_placeholder(entity)
+	_update_inspector_for_entity(entity)
 
 
 func _on_entity_deselected() -> void:
@@ -254,7 +260,7 @@ func _on_entity_deselected() -> void:
 	selected_entity = null
 
 	# Clear inspector panel
-	_clear_inspector_placeholder()
+	_clear_all_inspectors()
 
 
 func _create_selection_outline(entity: Node2D) -> void:
@@ -330,17 +336,63 @@ func _get_entity_size(entity: Node2D) -> Vector2:
 	return Vector2(32, 32)
 
 
-func _update_inspector_placeholder(entity: Node) -> void:
+## Update inspector panel based on the selected entity type
+func _update_inspector_for_entity(entity: Node) -> void:
+	# Hide placeholder label
 	var placeholder := inspector_section.get_node_or_null("PlaceholderLabel")
 	if placeholder is Label:
-		var data := DebugCommands.get_inspection_data(entity)
-		var entity_type: String = data.get("type", "unknown")
-		placeholder.text = "Selected: " + entity_type.capitalize()
+		placeholder.visible = false
+
+	# Get entity type from inspection data
+	var data := DebugCommands.get_inspection_data(entity)
+	var entity_type: String = data.get("type", "unknown")
+
+	# Show appropriate inspector based on type
+	match entity_type:
+		"npc":
+			_show_npc_inspector(entity)
+		_:
+			# For other entity types, show placeholder for now
+			_clear_all_inspectors()
+			if placeholder is Label:
+				placeholder.visible = true
+				placeholder.text = "Selected: " + entity_type.capitalize()
 
 
-func _clear_inspector_placeholder() -> void:
+## Show the NPC inspector panel for the given NPC
+func _show_npc_inspector(npc: Node) -> void:
+	# Hide other inspectors
+	_hide_all_inspectors()
+
+	# Create NPC inspector if it doesn't exist
+	if npc_inspector == null:
+		npc_inspector = NPCInspectorScene.instantiate()
+		inspector_section.add_child(npc_inspector)
+
+	# Set the NPC to inspect
+	npc_inspector.set_npc(npc)
+	npc_inspector.visible = true
+
+
+## Hide all inspector panels
+func _hide_all_inspectors() -> void:
+	if npc_inspector != null:
+		npc_inspector.visible = false
+
+
+## Clear all inspectors and show placeholder
+func _clear_all_inspectors() -> void:
+	# Hide all inspector panels
+	_hide_all_inspectors()
+
+	# Clear inspector data
+	if npc_inspector != null:
+		npc_inspector.clear()
+
+	# Show placeholder
 	var placeholder := inspector_section.get_node_or_null("PlaceholderLabel")
 	if placeholder is Label:
+		placeholder.visible = true
 		placeholder.text = "Select an entity to inspect"
 
 
