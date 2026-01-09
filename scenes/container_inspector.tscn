@@ -1,0 +1,31 @@
+[gd_scene load_steps=2 format=3 uid="uid://container_insp001"]
+
+[ext_resource type="Script" path="res://scripts/container_inspector.gd" id="1_container_inspector"]
+
+[node name="ContainerInspector" type="VBoxContainer"]
+script = ExtResource("1_container_inspector")
+theme_override_constants/separation = 4
+
+[node name="NameLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Container Name"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="TagsLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Allowed Tags: All"
+autowrap_mode = 2
+
+[node name="CapacityLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Capacity: 0/10"
+
+[node name="HSeparator2" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="ItemsContainer" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 2

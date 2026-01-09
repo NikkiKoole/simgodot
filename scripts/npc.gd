@@ -15,7 +15,8 @@ const TILE_SIZE := 32
 @export var stuck_threshold: float = 1.0  # Seconds without progress before wiggling
 @export var wiggle_strength: float = 40.0  # Random force when stuck
 
-enum State { IDLE, WALKING, WAITING, USING_OBJECT }
+enum State { IDLE, WALKING, WAITING, HAULING, WORKING }
+enum PathResult { MOVING, ARRIVED, STUCK }  # Result of path-following step
 var current_state: State = State.IDLE
 var wait_timer: float = 0.0
 var is_initialized: bool = false
@@ -32,6 +33,18 @@ const DEFAULT_COLLISION_RADIUS: float = 8.0
 const MIN_COLLISION_RADIUS: float = 1.0
 const SHRINK_RATE: float = 10.0  # Radius shrink per second when stuck (fast!)
 const GROW_RATE: float = 2.0    # Radius grow per second when moving (slow to recover)
+
+# Path-following constants
+const ARRIVAL_THRESHOLD: float = 2.0  # Distance tolerance for reaching waypoints
+const PROGRESS_TOLERANCE: float = 0.3  # Need 30% of expected speed to count as progress
+const STUCK_RECOVERY_RATE: float = 0.5  # Rate at which stuck timer decreases when moving
+const COLLISION_RADIUS_TOLERANCE: float = 0.1  # Tolerance for collision radius comparison
+const MAX_SPEED_MULTIPLIER: float = 1.3  # Allow slight overspeed when avoiding
+const SUBSTEP_DIVISOR: float = 0.25  # Fraction of collision radius for max step
+
+# Motive thresholds
+const MOTIVE_SATISFACTION_THRESHOLD: float = 90.0  # Above this, motive is satisfied
+const WANDER_MIN_DISTANCE: float = 100.0  # Minimum distance for wander target
 var current_collision_radius: float = DEFAULT_COLLISION_RADIUS
 var collision_shape: CollisionShape2D
 
@@ -48,13 +61,21 @@ var astar: AStarGrid2D
 var current_path: PackedVector2Array = []
 var path_index: int = 0
 
-# Object interaction
-var available_objects: Array[InteractableObject] = []
-var target_object: InteractableObject = null
-var object_use_timer: float = 0.0
-
 # Game clock reference
 var game_clock: GameClock
+
+# Job system / Hauling
+var current_job: Job = null
+var held_items: Array[ItemEntity] = []
+var available_containers: Array[ItemContainer] = []
+var target_container: ItemContainer = null
+var items_to_gather: Array[Dictionary] = []  # [{tag: String, quantity: int}]
+
+# Job system / Working
+var available_stations: Array[Station] = []
+var target_station: Station = null
+var work_timer: float = 0.0
+var current_animation: String = ""  # Animation being played for current step
 
 func _ready() -> void:
 	npc_id = npc_counter
@@ -148,16 +169,16 @@ func _physics_process(delta: float) -> void:
 			if wait_timer <= 0.0:
 				current_state = State.IDLE
 
-		State.USING_OBJECT:
-			_use_object(scaled_delta, game_delta)
+		State.HAULING:
+			_follow_path_hauling(speed_mult)
+
+		State.WORKING:
+			_do_work(scaled_delta, game_delta)
 
 func _follow_path(speed_mult: float) -> void:
 	if path_index >= current_path.size():
 		# Reached end of path
-		if target_object != null:
-			_start_using_object()
-		else:
-			_start_waiting()
+		_start_waiting()
 		stuck_timer = 0.0
 		return
 
@@ -178,7 +199,7 @@ func _follow_path(speed_mult: float) -> void:
 	var move_distance := speed * speed_mult * delta
 
 	# If we're close enough (or would overshoot), snap to waypoint and move to next
-	if distance <= move_distance + 2.0:
+	if distance <= move_distance + ARRIVAL_THRESHOLD:
 		# Snap to waypoint and move to next
 		global_position = target_pos
 		path_index += 1
@@ -195,7 +216,7 @@ func _follow_path(speed_mult: float) -> void:
 
 	# Check if stuck (not making meaningful progress toward goal)
 	var progress_toward_goal := last_position.distance_to(target_pos) - global_position.distance_to(target_pos)
-	var expected_progress := speed * speed_mult * delta * 0.3  # Need 30% of expected speed to count as progress
+	var expected_progress := speed * speed_mult * delta * PROGRESS_TOLERANCE
 	if progress_toward_goal < expected_progress:
 		stuck_timer += delta * speed_mult  # Scale with game speed
 	else:
@@ -204,13 +225,13 @@ func _follow_path(speed_mult: float) -> void:
 			stuck_timer = 0.0
 			wiggle_direction = Vector2.ZERO
 		else:
-			stuck_timer = maxf(0.0, stuck_timer - delta * speed_mult * 0.5)  # Scale with game speed
+			stuck_timer = maxf(0.0, stuck_timer - delta * speed_mult * STUCK_RECOVERY_RATE)  # Scale with game speed
 	last_position = global_position
 
 	# Dynamic collision shrinking/growing based on stuck state
 	if stuck_timer > stuck_threshold:
 		# Already at minimum collision and still stuck? Give up and find new route
-		if current_collision_radius <= MIN_COLLISION_RADIUS + 0.1:
+		if current_collision_radius <= MIN_COLLISION_RADIUS + COLLISION_RADIUS_TOLERANCE:
 			stuck_timer = 0.0
 			wiggle_direction = Vector2.ZERO
 			current_state = State.IDLE  # Will pick new destination
@@ -234,7 +255,7 @@ func _follow_path(speed_mult: float) -> void:
 
 	# Apply speed multiplier and clamp
 	final_velocity *= speed_mult
-	var max_speed := speed * speed_mult * 1.3  # Allow slight overspeed when avoiding
+	var max_speed := speed * speed_mult * MAX_SPEED_MULTIPLIER  # Allow slight overspeed when avoiding
 	if final_velocity.length() > max_speed:
 		final_velocity = final_velocity.normalized() * max_speed
 
@@ -242,7 +263,7 @@ func _follow_path(speed_mult: float) -> void:
 
 	# Subdivide movement when moving fast to prevent tunneling through other bodies
 	# Max safe movement per step is roughly half the collision radius
-	var max_step_distance := current_collision_radius * 0.25
+	var max_step_distance := current_collision_radius * SUBSTEP_DIVISOR
 	var frame_distance := velocity.length() * delta
 
 	if frame_distance > max_step_distance and velocity.length() > 0:
@@ -290,119 +311,154 @@ func _calculate_avoidance() -> Vector2:
 	return avoidance
 
 func _decide_next_action() -> void:
+	# If we already have a job, don't start a new action - continue with current task
+	if current_job != null:
+		return
+
 	# Check if we have critical motives that need addressing
 	if motives.has_critical_motive():
-		var best_object := _find_best_object_for_needs()
-		if best_object != null:
-			_pathfind_to_object(best_object)
+		# Try to find a job that fulfills the need
+		if _try_start_job_for_needs():
 			return
 
 	# Otherwise, just wander randomly
 	_pick_random_destination()
 
-func _find_best_object_for_needs() -> InteractableObject:
-	if available_objects.is_empty():
+## Try to find and claim a job that fulfills critical needs
+## If no suitable job exists, automatically posts one from available recipes
+## Returns true if a job was started, false otherwise
+##
+## Design Note: This implements Sims-style "world task" architecture where:
+## - Jobs represent shared work (cooking a meal) not personal quests
+## - Multiple hungry NPCs each get their own jobs (2 hungry = 2 meals needed)
+## - INTERRUPTED jobs can be claimed by other NPCs (food shouldn't waste)
+## - Single-threaded execution ensures post→claim is atomic (no race conditions)
+## - NPCs only claim jobs matching their most urgent motive
+func _try_start_job_for_needs() -> bool:
+	# Get the most urgent motive
+	var urgent_motive := motives.get_most_urgent_motive()
+	var motive_name := _motive_type_to_name(urgent_motive)
+
+	if motive_name.is_empty():
+		return false
+
+	# Build typed arrays for requirement checking
+	var typed_containers: Array[ItemContainer] = []
+	for c in available_containers:
+		typed_containers.append(c)
+
+	var typed_stations: Array[Station] = []
+	for s in available_stations:
+		typed_stations.append(s)
+
+	print("[NPC ", npc_id, "] _try_start_job_for_needs: motive=", motive_name, " containers=", typed_containers.size(), " stations=", typed_stations.size())
+
+	# Query JobBoard for available jobs that affect this motive
+	var job := JobBoard.get_highest_priority_job_for_motive(motive_name)
+	print("[NPC ", npc_id, "] JobBoard returned job: ", job)
+
+	# If no job exists, try to post one from available recipes
+	if job == null:
+		job = _try_post_job_for_motive(motive_name, urgent_motive, typed_containers, typed_stations)
+		if job == null:
+			print("[NPC ", npc_id, "] Could not post job for motive: ", motive_name)
+			return false
+		print("[NPC ", npc_id, "] Posted new job: ", job.recipe.recipe_name if job.recipe else "null")
+
+	# Check if we can actually start this job (have required items/stations)
+	var result := JobBoard.can_start_job(job, typed_containers, typed_stations)
+	print("[NPC ", npc_id, "] can_start_job result: ", result)
+	if not result.can_start:
+		print("[NPC ", npc_id, "] Cannot start job: ", result.reason if result.reason else "unknown")
+		return false
+
+	# Claim the job
+	print("[NPC ", npc_id, "] Attempting to claim job...")
+	if not JobBoard.claim_job(job, self, typed_containers):
+		print("[NPC ", npc_id, "] Failed to claim job")
+		return false
+	print("[NPC ", npc_id, "] Job claimed successfully")
+
+	# Start hauling items for the job
+	print("[NPC ", npc_id, "] Starting hauling for job...")
+	if not start_hauling_for_job(job):
+		print("[NPC ", npc_id, "] Failed to start hauling, releasing job")
+		job.release()
+		return false
+
+	print("[NPC ", npc_id, "] Hauling started successfully, state=", State.keys()[current_state])
+	return true
+
+## Try to post a new job for a motive from available recipes
+## Returns the posted job if successful, null otherwise
+func _try_post_job_for_motive(motive_name: String, motive_type: Motive.MotiveType, containers: Array[ItemContainer], stations: Array[Station]) -> Job:
+	print("[NPC ", npc_id, "] _try_post_job_for_motive: ", motive_name)
+
+	# Check if RecipeRegistry has any recipes for this motive
+	if not RecipeRegistry.has_recipe_for_motive(motive_name):
+		print("[NPC ", npc_id, "]   No recipes in registry for motive: ", motive_name)
 		return null
 
-	# Get the most urgent motive first
-	var urgent_motive := motives.get_most_urgent_motive()
+	# Get all recipes that fulfill this motive
+	var matching_recipes := RecipeRegistry.get_recipes_for_motive(motive_name)
+	print("[NPC ", npc_id, "]   Found ", matching_recipes.size(), " matching recipes")
+	if matching_recipes.is_empty():
+		return null
 
-	# First, try to find an object that fulfills the most urgent need
-	var best_object: InteractableObject = null
-	var best_score: float = 0.0
+	# Find the best recipe we can actually execute (have requirements for)
+	var best_recipe: Recipe = null
+	var best_effect: float = 0.0
 
-	for obj in available_objects:
-		# Check if object is available (not occupied or reserved by someone else)
-		if not obj.is_available_for(self):
-			continue
+	for recipe in matching_recipes:
+		print("[NPC ", npc_id, "]   Checking recipe: ", recipe.recipe_name)
+		# Check if we have the requirements for this recipe
+		var temp_job := Job.new(recipe, 0)
+		var can_start := JobBoard.can_start_job(temp_job, containers, stations)
+		print("[NPC ", npc_id, "]     can_start=", can_start.can_start, " reason=", can_start.reason if can_start.reason else "ok")
 
-		# Only consider objects that can fulfill the urgent motive
-		if not obj.can_fulfill(urgent_motive):
-			continue
+		if can_start.can_start:
+			var effect := recipe.get_motive_effect(motive_name)
+			if effect > best_effect:
+				best_effect = effect
+				best_recipe = recipe
 
-		# Score based on fulfillment rate for this specific motive
-		var fulfillment_rate := obj.get_fulfillment_rate(urgent_motive)
-		if fulfillment_rate <= 0:
-			continue
+	if best_recipe == null:
+		print("[NPC ", npc_id, "]   No recipe met requirements")
+		return null
 
-		# Factor in distance - closer objects are better
-		var distance := global_position.distance_to(obj.global_position)
-		# Distance penalty: score is divided by distance factor
-		var distance_factor := 1.0 + (distance / 320.0)
-		var final_score := fulfillment_rate / distance_factor
+	# Calculate priority based on need urgency
+	var priority := _calculate_job_priority_for_motive(motive_type)
 
-		if final_score > best_score:
-			best_score = final_score
-			best_object = obj
+	# Post the job
+	var job := JobBoard.post_job(best_recipe, priority)
+	return job
 
-	# If no object found for urgent motive, try any critical motive
-	if best_object == null:
-		var critical_motives := motives.get_critical_motives()
-		for motive in critical_motives:
-			for obj in available_objects:
-				if not obj.is_available_for(self):
-					continue
-				if obj.can_fulfill(motive):
-					return obj
+## Calculate job priority based on motive urgency
+## Higher priority for more urgent (lower value) motives
+## Returns priority from 0-100
+func _calculate_job_priority_for_motive(motive_type: Motive.MotiveType) -> int:
+	var motive_value := motives.get_value(motive_type)
 
-	return best_object
+	# Motive ranges from -100 to +100
+	# Convert to priority: -100 motive = 100 priority, +100 motive = 0 priority
+	# Formula: priority = (100 - motive_value) / 2
+	var priority := int((100.0 - motive_value) / 2.0)
 
-func _pathfind_to_object(obj: InteractableObject) -> void:
-	# Stop using current object if we were using one
-	if current_state == State.USING_OBJECT:
-		_stop_using_object()
+	# Clamp to valid range
+	return clampi(priority, 0, 100)
 
-	# Cancel any existing reservation first
-	_cancel_current_reservation()
-
-	# Try to reserve the object
-	if not obj.reserve(self):
-		# Object got reserved/occupied by someone else, try to find another
-
-		_start_waiting()
-		return
-
-	target_object = obj
-	var target_pos := obj.get_interaction_position()
-
-	# Convert world positions to grid coordinates
-	var from_grid := Vector2i(
-		int(global_position.x / TILE_SIZE),
-		int(global_position.y / TILE_SIZE)
-	)
-	var to_grid := Vector2i(
-		int(target_pos.x / TILE_SIZE),
-		int(target_pos.y / TILE_SIZE)
-	)
-
-	# Get path from AStar
-	current_path = astar.get_point_path(from_grid, to_grid)
-
-	# Pre-smooth the path to remove unnecessary waypoints
-	if path_smoothing_enabled and current_path.size() > 2:
-		current_path = _smooth_path(current_path)
-
-	path_index = 0
-
-
-
-	if current_path.size() > 0:
-		current_state = State.WALKING
-	else:
-		# No path found, cancel reservation and wait
-		_cancel_current_reservation()
-		target_object = null
-		_start_waiting()
-
-func _cancel_current_reservation() -> void:
-	if target_object != null:
-		target_object.cancel_reservation(self)
+## Convert MotiveType enum to lowercase string name for recipe matching
+func _motive_type_to_name(motive_type: Motive.MotiveType) -> String:
+	match motive_type:
+		Motive.MotiveType.HUNGER: return "hunger"
+		Motive.MotiveType.ENERGY: return "energy"
+		Motive.MotiveType.SOCIAL: return "social"
+		Motive.MotiveType.HYGIENE: return "hygiene"
+		Motive.MotiveType.BLADDER: return "bladder"
+		Motive.MotiveType.FUN: return "fun"
+		_: return ""
 
 func _pick_random_destination() -> void:
-	# Cancel any existing reservation when wandering
-	_cancel_current_reservation()
-	target_object = null
-
 	if wander_positions.is_empty() or astar == null:
 		return
 
@@ -411,7 +467,7 @@ func _pick_random_destination() -> void:
 
 	# Make sure it's not too close to current position
 	var attempts := 0
-	while target.distance_to(global_position) < 100.0 and attempts < 10:
+	while target.distance_to(global_position) < WANDER_MIN_DISTANCE and attempts < 10:
 		target = wander_positions.pick_random() as Vector2
 		attempts += 1
 
@@ -439,78 +495,18 @@ func _pick_random_destination() -> void:
 	else:
 		_start_waiting()
 
-func _start_using_object() -> void:
-	if target_object == null:
-		_start_waiting()
-		return
-
-	if not target_object.start_use(self):
-		# Failed to start using - cancel reservation and clear target
-		target_object.cancel_reservation(self)
-		target_object = null
-		_start_waiting()
-		return
-
-
-	object_use_timer = target_object.use_duration
-	current_state = State.USING_OBJECT
-	velocity = Vector2.ZERO
-
-func _use_object(delta: float, game_delta: float) -> void:
-	if target_object == null:
-		current_state = State.IDLE
-		return
-
-	# Fulfill motives while using object (uses game time)
-	for motive_type in target_object.advertisements:
-		var rate: float = target_object.get_fulfillment_rate(motive_type)
-		motives.fulfill(motive_type, rate * game_delta)
-
-	# Object use timer runs on game time
-	object_use_timer -= game_delta
-	if object_use_timer <= 0.0:
-		_stop_using_object()
-	# Also stop early if the motive is fully satisfied
-	elif _is_motive_satisfied():
-		_stop_using_object()
-
-func _is_motive_satisfied() -> bool:
-	if target_object == null:
-		return true
-	# Check if all motives this object fulfills are above 90%
-	for motive_type in target_object.advertisements:
-		if motives.get_value(motive_type) < 90.0:
-			return false
-	return true
-
-func _stop_using_object() -> void:
-	if target_object != null:
-		target_object.stop_use(self)
-		target_object = null
-	current_state = State.IDLE
-
 func _start_waiting() -> void:
 	velocity = Vector2.ZERO
 	wait_timer = randf_range(min_wait_time, max_wait_time)
 	current_state = State.WAITING
 
-func _on_motive_depleted(motive_type: Motive.MotiveType) -> void:
-	_force_fulfill_motive(motive_type)
+func _on_motive_depleted(_motive_type: Motive.MotiveType) -> void:
+	# Trigger immediate action when motive depletes
+	current_state = State.IDLE
 
 func _on_motive_critical(_motive_type: Motive.MotiveType) -> void:
-	if current_state != State.USING_OBJECT:
-		current_state = State.IDLE
-
-func _force_fulfill_motive(motive_type: Motive.MotiveType) -> void:
-	for obj in available_objects:
-		if obj.can_fulfill(motive_type) and obj.is_available_for(self):
-			_pathfind_to_object(obj)
-			return
-
-# Called by level to set available objects
-func set_available_objects(objects: Array[InteractableObject]) -> void:
-	# Make a copy so each NPC has their own list
-	available_objects = objects.duplicate()
+	# Trigger action search when motive becomes critical
+	current_state = State.IDLE
 
 func set_walkable_positions(positions: Array[Vector2]) -> void:
 	walkable_positions = positions
@@ -524,21 +520,338 @@ func set_astar(astar_ref: AStarGrid2D) -> void:
 func set_game_clock(clock: GameClock) -> void:
 	game_clock = clock
 
-# For interaction with objects via collision
-func can_interact_with_object(_obj: InteractableObject) -> bool:
-	return true
-
-func on_object_in_range(_obj: InteractableObject) -> void:
-	# NPCs know about all objects globally, no need to track by range
-	pass
-
-func on_object_out_of_range(_obj: InteractableObject) -> void:
-	# NPCs know about all objects globally, no need to track by range
-	pass
-
 # Called by player when bumping into this NPC
 func receive_push(push: Vector2) -> void:
 	push_velocity = push
+
+# Called by level to set available containers for hauling
+func set_available_containers(containers: Array[ItemContainer]) -> void:
+	available_containers = containers.duplicate()
+
+# ============================================================================
+# HAULING STATE - Gathering items for jobs
+# ============================================================================
+
+## Start hauling items for a job
+## Returns true if hauling started, false if requirements can't be met
+## Handles both new jobs and resuming interrupted jobs
+func start_hauling_for_job(job: Job) -> bool:
+	if job == null or job.recipe == null:
+		return false
+
+	current_job = job
+	held_items.clear()
+	items_to_gather.clear()
+
+	# Check if this is a resumed interrupted job
+	# A job is considered resumed if step > 0 OR if it was previously interrupted
+	var was_interrupted := job.state == Job.JobState.INTERRUPTED or job.state == Job.JobState.CLAIMED
+	var is_resumed := job.current_step_index > 0 or was_interrupted
+
+	# Build list of items to gather from recipe inputs and tools
+	for input_data in job.recipe.inputs:
+		var input := Recipe.RecipeInput.from_dict(input_data)
+		items_to_gather.append({"tag": input.item_tag, "quantity": input.quantity})
+
+	for tool_tag in job.recipe.tools:
+		items_to_gather.append({"tag": tool_tag, "quantity": 1})
+
+	# Note: Items may be reserved for this job (from claim_job) but they're still
+	# in containers. The NPC needs to physically go pick them up.
+	# The reservation just prevents other NPCs from taking them.
+	# We do NOT reduce items_to_gather here - the NPC must still fetch them.
+	# However, _find_container_with_item needs to find reserved items that belong to us.
+
+	# If resuming (or was interrupted), check for items already at stations
+	if is_resumed:
+		_account_for_existing_items()
+
+	# Start gathering the first item (or skip if all items accounted for)
+	return _start_gathering_next_item()
+
+## Account for items that may already exist at stations or on ground from interrupted job
+func _account_for_existing_items() -> void:
+	if current_job == null:
+		return
+
+	# Find items at stations that match our requirements
+	for station in available_stations:
+		var station_items := station.get_all_input_items()
+		for item in station_items:
+			if not is_instance_valid(item):
+				continue
+			# Check if this item matches something we need
+			_reduce_gather_requirement(item.item_tag)
+
+	# Also check items on the ground (gathered_items from previous agent might be there)
+	# These items would need to be reserved and picked up normally
+	# For now, we just check station slots since that's the most common case
+
+## Reduce the quantity needed for a specific item tag (used when resuming interrupted jobs)
+func _reduce_gather_requirement(tag: String) -> void:
+	for i in range(items_to_gather.size()):
+		var req: Dictionary = items_to_gather[i]
+		if req["tag"] == tag:
+			req["quantity"] = req["quantity"] - 1
+			if req["quantity"] <= 0:
+				items_to_gather.remove_at(i)
+			return
+
+## Find and pathfind to the next item that needs to be gathered
+func _start_gathering_next_item() -> bool:
+	if items_to_gather.is_empty():
+		# All items gathered, transition to moving to station
+		_on_all_items_gathered()
+		return true
+
+	# Find a container with the required item
+	var needed := items_to_gather[0]
+	var tag: String = needed["tag"]
+	var quantity: int = needed["quantity"]
+
+	# Count how many of this tag we already have
+	var held_count := 0
+	for item in held_items:
+		if item.item_tag == tag:
+			held_count += 1
+
+	# If we have enough of this item, move to next
+	if held_count >= quantity:
+		items_to_gather.remove_at(0)
+		return _start_gathering_next_item()
+
+	# Find a container with an available item of this tag
+	target_container = _find_container_with_item(tag)
+	if target_container == null:
+		# No container found with this item, job cannot proceed
+		_cancel_hauling()
+		return false
+
+	# Pathfind to the container
+	_pathfind_to_container(target_container)
+	return true
+
+## Find a container that has an available item with the given tag
+## Also considers items reserved by this NPC for the current job
+func _find_container_with_item(tag: String) -> ItemContainer:
+	print("[NPC ", npc_id, "] Looking for container with '", tag, "' in ", available_containers.size(), " containers")
+	for container in available_containers:
+		var item_count := container.get_item_count() if container.has_method("get_item_count") else -1
+		var available_count := container.get_available_count(tag) if container.has_method("get_available_count") else -1
+		print("[NPC ", npc_id, "]   Checking container: ", container.container_name, " total_items=", item_count, " available_", tag, "=", available_count)
+
+		# Check for unreserved items
+		if container.has_available_item(tag):
+			return container
+
+		# Also check for items reserved by us (for current job)
+		if current_job != null:
+			var all_items = container.get_all_items() if container.has_method("get_all_items") else []
+			for item in all_items:
+				if item.item_tag == tag and item.is_reserved() and item.reserved_by == self:
+					print("[NPC ", npc_id, "]   Found item reserved by us: ", item.item_tag)
+					return container
+
+	print("[NPC ", npc_id, "] No container found with '", tag, "'")
+	return null
+
+## Find an item in a container that we can pick up
+## Prefers items reserved by us, then unreserved items
+func _find_item_in_container(container: ItemContainer, tag: String) -> ItemEntity:
+	if container == null:
+		return null
+
+	var all_items = container.get_all_items() if container.has_method("get_all_items") else []
+
+	# First, look for items reserved by us
+	for item in all_items:
+		if item.item_tag == tag and item.is_reserved() and item.reserved_by == self:
+			return item
+
+	# Then, look for unreserved items
+	for item in all_items:
+		if item.item_tag == tag and not item.is_reserved():
+			return item
+
+	return null
+
+## Pathfind to a container
+func _pathfind_to_container(container: ItemContainer) -> void:
+	if astar == null:
+		_cancel_hauling()
+		return
+
+	var target_pos := container.global_position
+
+	# Convert world positions to grid coordinates
+	var from_grid := Vector2i(
+		int(global_position.x / TILE_SIZE),
+		int(global_position.y / TILE_SIZE)
+	)
+	var to_grid := Vector2i(
+		int(target_pos.x / TILE_SIZE),
+		int(target_pos.y / TILE_SIZE)
+	)
+
+	# Get path from AStar
+	current_path = astar.get_point_path(from_grid, to_grid)
+
+	# Pre-smooth the path
+	if path_smoothing_enabled and current_path.size() > 2:
+		current_path = _smooth_path(current_path)
+
+	path_index = 0
+
+	if current_path.size() > 0:
+		current_state = State.HAULING
+	else:
+		# No path found
+		_cancel_hauling()
+
+## Follow path while in HAULING state
+func _follow_path_hauling(speed_mult: float) -> void:
+	var result := _follow_path_step(speed_mult)
+	match result:
+		PathResult.ARRIVED:
+			_on_arrived_at_container()
+		PathResult.STUCK:
+			_cancel_hauling()
+		# PathResult.MOVING: continue next frame
+
+## Called when agent arrives at the target container
+func _on_arrived_at_container() -> void:
+	if target_container == null or items_to_gather.is_empty():
+		_cancel_hauling()
+		return
+
+	var needed := items_to_gather[0]
+	var tag: String = needed["tag"]
+
+	# Find and pick up the item - prefer items reserved by us, then unreserved
+	var item := _find_item_in_container(target_container, tag)
+	if item == null:
+		# Item no longer available, try to find another container
+		print("[NPC ", npc_id, "] Item not found in container, looking for another")
+		target_container = null
+		if not _start_gathering_next_item():
+			_cancel_hauling()
+		return
+
+	# Pick up the item
+	print("[NPC ", npc_id, "] Picking up item: ", item.item_tag)
+	_pick_up_item(item)
+
+	# Check if we need more of this item
+	var quantity_needed: int = needed["quantity"]
+	var held_count := 0
+	for held_item in held_items:
+		if held_item.item_tag == tag:
+			held_count += 1
+
+	if held_count >= quantity_needed:
+		# Got enough of this item, move to next requirement
+		items_to_gather.remove_at(0)
+
+	# Continue gathering
+	target_container = null
+	_start_gathering_next_item()
+
+## Pick up an item from a container
+func _pick_up_item(item: ItemEntity) -> void:
+	if not is_instance_valid(item):
+		return
+
+	# Remove from container
+	var parent := item.get_parent()
+	if parent is ItemContainer:
+		parent.remove_item(item)
+
+	# Set item state
+	item.pick_up(self)
+
+	# Add to held items
+	held_items.append(item)
+
+	# Add to job's gathered items if we have a job
+	if current_job != null:
+		current_job.add_gathered_item(item)
+
+	# Reparent to agent (optional - could keep at world level)
+	if item.get_parent() != null:
+		item.get_parent().remove_child(item)
+	add_child(item)
+	item.position = Vector2.ZERO  # Hide at agent's position
+
+## Called when all required items have been gathered
+func _on_all_items_gathered() -> void:
+	print("[NPC ", npc_id, "] All items gathered, starting work phase")
+	target_container = null
+
+	# Start working on the job - find station for first step
+	if current_job != null and current_job.recipe != null:
+		current_job.start()
+		_start_next_work_step()
+	else:
+		print("[NPC ", npc_id, "] No job or recipe, going idle")
+		current_state = State.IDLE
+
+## Cancel hauling and release resources
+func _cancel_hauling() -> void:
+	# Drop all held items (make a copy since _drop_item modifies held_items)
+	var items_to_drop := held_items.duplicate()
+	for item in items_to_drop:
+		if is_instance_valid(item):
+			_drop_item(item)
+	held_items.clear()
+
+	# Release job if we have one
+	if current_job != null:
+		current_job.release()
+		current_job = null
+
+	items_to_gather.clear()
+	target_container = null
+	current_state = State.IDLE
+
+## Drop an item at the current position
+func _drop_item(item: ItemEntity) -> void:
+	if item == null or not is_instance_valid(item):
+		return
+
+	# Remove from held items if present
+	var idx := held_items.find(item)
+	if idx >= 0:
+		held_items.remove_at(idx)
+
+	# Remove from job's gathered items
+	if current_job != null:
+		current_job.remove_gathered_item(item)
+
+	# Reparent to world
+	if item.get_parent() == self:
+		remove_child(item)
+		get_parent().add_child(item)
+		item.global_position = global_position
+
+	# Update item state
+	item.drop()
+	item.release_item()
+
+## Get the array of currently held items
+func get_held_items() -> Array[ItemEntity]:
+	return held_items
+
+## Check if agent is currently holding any items
+func is_holding_items() -> bool:
+	return not held_items.is_empty()
+
+## Remove a held item (called when item is consumed or placed)
+func remove_held_item(item: ItemEntity) -> bool:
+	var idx := held_items.find(item)
+	if idx >= 0:
+		held_items.remove_at(idx)
+		return true
+	return false
 
 # Path smoothing settings
 @export var path_smoothing_enabled: bool = true
@@ -588,6 +901,94 @@ func _try_skip_waypoints() -> void:
 				path_index = i
 			break
 
+## Common path-following logic used by HAULING and WORKING states
+## Returns PathResult indicating what happened: MOVING, ARRIVED, or STUCK
+func _follow_path_step(speed_mult: float) -> PathResult:
+	# Check if we've reached the end of the path
+	if path_index >= current_path.size():
+		return PathResult.ARRIVED
+
+	var target_pos := current_path[path_index]
+	var distance := global_position.distance_to(target_pos)
+	var delta := get_physics_process_delta_time()
+	var move_distance := speed * speed_mult * delta
+
+	# If close enough, snap to waypoint and advance
+	if distance <= move_distance + ARRIVAL_THRESHOLD:
+		global_position = target_pos
+		path_index += 1
+		stuck_timer = 0.0
+		# Check if that was the last waypoint
+		if path_index >= current_path.size():
+			return PathResult.ARRIVED
+		return PathResult.MOVING
+
+	var desired_direction := global_position.direction_to(target_pos)
+	var avoidance := _calculate_avoidance()
+
+	# Disable avoidance when stuck to allow pushing through
+	if stuck_timer > stuck_threshold:
+		avoidance = Vector2.ZERO
+
+	# Check if making progress toward goal
+	var progress_toward_goal := last_position.distance_to(target_pos) - global_position.distance_to(target_pos)
+	var expected_progress := speed * speed_mult * delta * 0.3
+
+	if progress_toward_goal < expected_progress:
+		stuck_timer += delta * speed_mult
+	else:
+		if progress_toward_goal > expected_progress * 2:
+			stuck_timer = 0.0
+			wiggle_direction = Vector2.ZERO
+		else:
+			stuck_timer = maxf(0.0, stuck_timer - delta * speed_mult * 0.5)
+
+	last_position = global_position
+
+	# Dynamic collision shrinking when stuck
+	if stuck_timer > stuck_threshold:
+		if current_collision_radius <= MIN_COLLISION_RADIUS + COLLISION_RADIUS_TOLERANCE:
+			# Completely stuck, give up
+			stuck_timer = 0.0
+			wiggle_direction = Vector2.ZERO
+			return PathResult.STUCK
+		_update_collision_radius(current_collision_radius - SHRINK_RATE * delta * speed_mult)
+	elif current_collision_radius < DEFAULT_COLLISION_RADIUS:
+		_update_collision_radius(current_collision_radius + GROW_RATE * delta * speed_mult)
+
+	# Add wiggle force when stuck
+	var wiggle := Vector2.ZERO
+	if stuck_timer > stuck_threshold:
+		if wiggle_direction == Vector2.ZERO:
+			wiggle_direction = Vector2(randf_range(-1, 1), randf_range(-1, 1)).normalized()
+		wiggle = wiggle_direction * wiggle_strength
+
+	# Combine movement forces
+	var final_velocity := desired_direction * speed + avoidance * avoidance_strength + wiggle
+	final_velocity *= speed_mult
+
+	# Clamp to max speed
+	var max_speed := speed * speed_mult * 1.3
+	if final_velocity.length() > max_speed:
+		final_velocity = final_velocity.normalized() * max_speed
+
+	velocity = final_velocity
+
+	# Subdivide movement to prevent tunneling
+	var max_step_distance := current_collision_radius * SUBSTEP_DIVISOR
+	var frame_distance := velocity.length() * delta
+
+	if frame_distance > max_step_distance and velocity.length() > 0:
+		var substeps := ceili(frame_distance / max_step_distance)
+		var substep_velocity := velocity / substeps
+		for i in substeps:
+			velocity = substep_velocity
+			move_and_slide()
+	else:
+		move_and_slide()
+
+	return PathResult.MOVING
+
 # Clamp NPC position to valid walkable area
 func _clamp_to_valid_position() -> void:
 	if astar == null:
@@ -620,3 +1021,471 @@ func _update_collision_radius(new_radius: float) -> void:
 	if collision_shape and collision_shape.shape is CircleShape2D:
 		collision_shape.shape.radius = current_collision_radius
 	queue_redraw()
+
+# ============================================================================
+# WORKING STATE - Executing recipe steps at stations
+# ============================================================================
+
+## Called by level to set available stations
+func set_available_stations(stations: Array[Station]) -> void:
+	available_stations = stations.duplicate()
+
+## Start the next work step in the current job's recipe
+func _start_next_work_step() -> void:
+	if current_job == null or current_job.recipe == null:
+		print("[NPC ", npc_id, "] _start_next_work_step: no job, finishing")
+		_finish_job()
+		return
+
+	var step := current_job.get_current_step()
+	if step == null:
+		# No more steps, job is complete
+		print("[NPC ", npc_id, "] _start_next_work_step: no more steps, job complete!")
+		_finish_job()
+		return
+
+	print("[NPC ", npc_id, "] _start_next_work_step: step ", current_job.current_step_index, " action=", step.action, " station=", step.station_tag)
+
+	# Find station for this step
+	var station := _find_station_for_step(step)
+	if station == null:
+		# No available station found, fail the job
+		_cancel_working("No station available for step: " + step.station_tag)
+		return
+
+	# Reserve the station
+	if not station.reserve(self):
+		_cancel_working("Could not reserve station: " + station.station_tag)
+		return
+
+	print("[NPC ", npc_id, "] Reserved station: ", station.station_tag, " at ", station.global_position)
+	target_station = station
+	current_job.target_station = station
+
+	# Pathfind to station's agent footprint
+	_pathfind_to_station(station)
+
+## Find an available station matching the step's station_tag
+func _find_station_for_step(step: RecipeStep) -> Station:
+	if not step.requires_station():
+		return null
+
+	for station in available_stations:
+		if station.station_tag == step.station_tag and station.is_available():
+			return station
+
+	# Also check if we already reserved one that matches
+	for station in available_stations:
+		if station.station_tag == step.station_tag and station.is_reserved_by(self):
+			return station
+
+	return null
+
+## Pathfind to a station's agent footprint position
+func _pathfind_to_station(station: Station) -> void:
+	if astar == null:
+		_cancel_working("No pathfinding available")
+		return
+
+	var target_pos := station.get_agent_position()
+
+	# Convert world positions to grid coordinates
+	var from_grid := Vector2i(
+		int(global_position.x / TILE_SIZE),
+		int(global_position.y / TILE_SIZE)
+	)
+	var to_grid := Vector2i(
+		int(target_pos.x / TILE_SIZE),
+		int(target_pos.y / TILE_SIZE)
+	)
+
+	# Get path from AStar
+	current_path = astar.get_point_path(from_grid, to_grid)
+
+	# Pre-smooth the path
+	if path_smoothing_enabled and current_path.size() > 2:
+		current_path = _smooth_path(current_path)
+
+	path_index = 0
+
+	current_state = State.WORKING
+	if current_path.size() == 0:
+		# Already at station or no path needed
+		_on_arrived_at_station()
+
+## Follow path while in WORKING state (moving to station)
+func _follow_path_working(speed_mult: float) -> void:
+	var result := _follow_path_step(speed_mult)
+	match result:
+		PathResult.ARRIVED:
+			_on_arrived_at_station()
+		PathResult.STUCK:
+			_cancel_working("Got stuck while moving to station")
+		# PathResult.MOVING: continue next frame
+
+## Called when agent arrives at the target station
+func _on_arrived_at_station() -> void:
+	print("[NPC ", npc_id, "] _on_arrived_at_station called")
+	if target_station == null or current_job == null:
+		_cancel_working("No station or job on arrival")
+		return
+
+	velocity = Vector2.ZERO
+
+	# Place held items in station input slots if needed
+	_place_items_in_station()
+
+	# Start the work timer for current step
+	_start_step_work()
+
+## Place held items into station input slots
+func _place_items_in_station() -> void:
+	if target_station == null:
+		return
+
+	# Place each held item in an available input slot
+	var items_to_place := held_items.duplicate()
+	for item in items_to_place:
+		if not is_instance_valid(item):
+			continue
+
+		var slot_index := target_station.find_empty_input_slot()
+		if slot_index >= 0:
+			# Remove from held items
+			remove_held_item(item)
+			# Remove from our child if it's parented to us
+			if item.get_parent() == self:
+				remove_child(item)
+			# Place in station slot
+			target_station.place_input_item(item, slot_index)
+
+## Start working on the current step
+func _start_step_work() -> void:
+	if current_job == null:
+		_cancel_working("No job for step work")
+		return
+
+	var step := current_job.get_current_step()
+	if step == null:
+		print("[NPC ", npc_id, "] _start_step_work: no step, finishing job")
+		_finish_job()
+		return
+
+	# Set up timer and animation
+	work_timer = step.duration
+	current_animation = step.animation
+	print("[NPC ", npc_id, "] _start_step_work: work_timer=", work_timer, " for action=", step.action)
+
+	# Play animation if specified (agent would need AnimationPlayer)
+	if not current_animation.is_empty():
+		_play_animation(current_animation)
+
+## Do work on the current step (called each frame in WORKING state)
+func _do_work(scaled_delta: float, _game_delta: float) -> void:
+	# If we're still pathfinding to station, follow the path
+	if path_index < current_path.size():
+		# Get speed multiplier
+		var speed_mult := 1.0
+		if game_clock != null:
+			speed_mult = game_clock.speed_multiplier if not game_clock.is_paused else 0.0
+		_follow_path_working(speed_mult)
+		return
+
+	# We're at the station, count down work timer
+	if work_timer > 0.0:
+		work_timer -= scaled_delta
+		if work_timer <= 0.0:
+			_on_step_complete()
+
+## Called when the current step's timer completes
+func _on_step_complete() -> void:
+	print("[NPC ", npc_id, "] _on_step_complete called")
+	if current_job == null:
+		_cancel_working("No job on step complete")
+		return
+
+	var step := current_job.get_current_step()
+	if step != null:
+		# Apply input transforms to items
+		_apply_step_transforms(step)
+
+	# Stop animation
+	if not current_animation.is_empty():
+		_stop_animation()
+		current_animation = ""
+
+	# Release current station if we're done with it
+	if target_station != null:
+		# Check if next step uses a different station
+		var next_step_index := current_job.current_step_index + 1
+		var next_step: RecipeStep = null
+		if next_step_index < current_job.get_total_steps():
+			next_step = current_job.recipe.get_step(next_step_index)
+
+		# Release station if next step uses different station or no next step
+		if next_step == null or next_step.station_tag != target_station.station_tag:
+			# Pick up items from station before leaving
+			_pick_up_items_from_station()
+			target_station.release()
+			target_station = null
+			current_job.target_station = null
+
+	# Advance to next step
+	if current_job.advance_step():
+		# More steps remaining
+		_start_next_work_step()
+	else:
+		# All steps complete
+		_finish_job()
+
+## Apply input_transform from step to items at the station
+func _apply_step_transforms(step: RecipeStep) -> void:
+	if step.input_transform.is_empty():
+		return
+
+	# Get all items at station (in input slots and held)
+	var items_to_transform: Array[ItemEntity] = []
+
+	if target_station != null:
+		items_to_transform.append_array(target_station.get_all_input_items())
+
+	# Also check held items
+	for item in held_items:
+		if is_instance_valid(item):
+			items_to_transform.append(item)
+
+	# Apply transforms
+	for item in items_to_transform:
+		if not is_instance_valid(item):
+			continue
+
+		if step.transforms_item(item.item_tag):
+			var new_tag := step.get_transformed_tag(item.item_tag)
+			item.item_tag = new_tag
+
+			# Update state using RecipeStep's explicit or inferred state
+			var new_state := step.get_output_state(new_tag)
+			if new_state >= 0:
+				item.set_state(new_state)
+
+## Pick up items from station input/output slots
+func _pick_up_items_from_station() -> void:
+	if target_station == null:
+		return
+
+	# Pick up from output slots first
+	for i in range(target_station.get_output_slot_count()):
+		var item := target_station.remove_output_item(i)
+		if is_instance_valid(item):
+			_pick_up_item(item)
+
+	# Then input slots
+	for i in range(target_station.get_input_slot_count()):
+		var item := target_station.remove_input_item(i)
+		if is_instance_valid(item):
+			_pick_up_item(item)
+
+## Complete the job successfully
+func _finish_job() -> void:
+	print("[NPC ", npc_id, "] _finish_job called")
+	if current_job == null:
+		print("[NPC ", npc_id, "] No current job, going idle")
+		current_state = State.IDLE
+		return
+
+	# Apply motive effects from recipe
+	if current_job.recipe != null:
+		print("[NPC ", npc_id, "] Applying motive effects from recipe: ", current_job.recipe.motive_effects)
+		for motive_name in current_job.recipe.motive_effects:
+			var effect: float = current_job.recipe.motive_effects[motive_name]
+			# Convert motive name to MotiveType if possible
+			var motive_type := _motive_name_to_type(motive_name)
+			if motive_type >= 0:
+				motives.fulfill(motive_type, effect)
+
+	# Handle item cleanup: tools are preserved, everything else is consumed
+	# Tools can be identified by matching tool tags from recipe
+	# All other items (transformed inputs, outputs) are consumed for motive satisfaction
+	if current_job.recipe != null:
+		var tool_tags := current_job.recipe.tools
+		var items_to_consume: Array[ItemEntity] = []
+		var items_to_preserve: Array[ItemEntity] = []
+
+		for item in held_items:
+			if not is_instance_valid(item):
+				continue
+			if tool_tags.has(item.item_tag):
+				# Tool - preserve it (drop back to world)
+				items_to_preserve.append(item)
+			else:
+				# Non-tool item - consume it
+				items_to_consume.append(item)
+
+		# Consume non-tool items
+		for item in items_to_consume:
+			remove_held_item(item)
+			item.queue_free()
+
+		# Drop tools back to world for reuse
+		for item in items_to_preserve:
+			_drop_item(item)
+	else:
+		# No recipe - just drop everything
+		var remaining := held_items.duplicate()
+		for item in remaining:
+			if is_instance_valid(item):
+				_drop_item(item)
+
+	held_items.clear()
+
+	# Release station if still reserved
+	if target_station != null:
+		if target_station.is_reserved_by(self):
+			target_station.release()
+		target_station = null
+
+	# Complete the job
+	current_job.complete()
+	current_job = null
+
+	current_state = State.IDLE
+
+## Cancel working and release resources
+func _cancel_working(reason: String = "") -> void:
+	if reason != "":
+		print("[NPC ", npc_id, "] Cancel working: ", reason)
+
+	# Release station
+	if target_station != null:
+		# Pick up any items we placed
+		_pick_up_items_from_station()
+		if target_station.is_reserved_by(self):
+			target_station.release()
+		target_station = null
+
+	# Stop animation
+	if not current_animation.is_empty():
+		_stop_animation()
+		current_animation = ""
+
+	# Drop all held items
+	var items_to_drop := held_items.duplicate()
+	for item in items_to_drop:
+		if is_instance_valid(item):
+			_drop_item(item)
+	held_items.clear()
+
+	# Fail the job if we have one
+	if current_job != null:
+		current_job.fail(reason)
+		current_job = null
+
+	work_timer = 0.0
+	current_state = State.IDLE
+
+## Play an animation (stub - agents may not have AnimationPlayer)
+func _play_animation(anim_name: String) -> void:
+	# Check if we have an AnimationPlayer child
+	var anim_player := get_node_or_null("AnimationPlayer") as AnimationPlayer
+	if anim_player != null and anim_player.has_animation(anim_name):
+		anim_player.play(anim_name)
+
+## Stop current animation
+func _stop_animation() -> void:
+	var anim_player := get_node_or_null("AnimationPlayer") as AnimationPlayer
+	if anim_player != null:
+		anim_player.stop()
+
+## Convert motive name string to MotiveType enum
+func _motive_name_to_type(motive_name: String) -> int:
+	match motive_name.to_lower():
+		"hunger": return Motive.MotiveType.HUNGER
+		"energy": return Motive.MotiveType.ENERGY
+		"social": return Motive.MotiveType.SOCIAL
+		"hygiene": return Motive.MotiveType.HYGIENE
+		"bladder": return Motive.MotiveType.BLADDER
+		"fun", "entertainment": return Motive.MotiveType.FUN
+		_: return -1
+
+## Get current work progress (0.0 to 1.0 for current step)
+func get_work_progress() -> float:
+	if current_job == null:
+		return 0.0
+	var step := current_job.get_current_step()
+	if step == null or step.duration <= 0:
+		return 1.0
+	return 1.0 - (work_timer / step.duration)
+
+## Check if agent is currently working
+func is_working() -> bool:
+	return current_state == State.WORKING
+
+# ============================================================================
+# JOB INTERRUPTION
+# ============================================================================
+
+## Interrupt the current job, dropping items and preserving job state for resumption
+## Returns true if job was interrupted, false if no job to interrupt
+func interrupt_current_job() -> bool:
+	if current_job == null:
+		return false
+
+	# Only interrupt if we're actively working on the job
+	if current_job.state != Job.JobState.IN_PROGRESS:
+		return false
+
+	# Stop any animation
+	if not current_animation.is_empty():
+		_stop_animation()
+		current_animation = ""
+
+	# Handle items - either leave in station slots or drop on ground
+	# Items already placed in station slots stay there (IN_SLOT)
+	# Items we're still holding get dropped on ground (ON_GROUND)
+	var items_to_drop := held_items.duplicate()
+	for item in items_to_drop:
+		if is_instance_valid(item):
+			_drop_item_on_interrupt(item)
+	held_items.clear()
+
+	# Release station reservation (but don't pick up items from it)
+	if target_station != null:
+		if target_station.is_reserved_by(self):
+			target_station.release()
+		target_station = null
+
+	# Interrupt the job via JobBoard (this releases item reservations too)
+	if current_job != null:
+		JobBoard.interrupt_job(current_job)
+		current_job = null
+
+	# Reset state
+	work_timer = 0.0
+	items_to_gather.clear()
+	target_container = null
+	current_path = PackedVector2Array()
+	path_index = 0
+	velocity = Vector2.ZERO
+	current_state = State.IDLE
+
+	return true
+
+## Drop an item during interruption (ON_GROUND, preserves position)
+func _drop_item_on_interrupt(item: ItemEntity) -> void:
+	if not is_instance_valid(item):
+		return
+
+	# Remove from held items if present
+	var idx := held_items.find(item)
+	if idx >= 0:
+		held_items.remove_at(idx)
+
+	# Reparent to world at current agent position
+	if item.get_parent() == self:
+		var world_pos := global_position
+		remove_child(item)
+		get_parent().add_child(item)
+		item.global_position = world_pos
+
+	# Set item to ON_GROUND (reservation will be released by job.interrupt())
+	item.set_location(ItemEntity.ItemLocation.ON_GROUND)

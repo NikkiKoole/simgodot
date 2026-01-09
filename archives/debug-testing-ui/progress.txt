@@ -1,0 +1,621 @@
+## Codebase Patterns
+
+- Use GDScript explicit type annotations for variables assigned from function returns (e.g., `var x: bool = func()`) to avoid type inference errors
+- Use `is_instance_valid(node)` instead of `node != null` for null checks - handles both null and freed nodes
+- Test files follow pattern: `test_*.gd` with matching `test_*.tscn` scene
+- Stations use single station_tag string for recipe matching (multi-tag support could be future PRD)
+- Items track location via LocationState enum: ON_GROUND, IN_CONTAINER, AT_STATION, HELD_BY_NPC
+- Jobs track progress via current_step_index through recipe steps array
+- JobBoard is autoload singleton for global job management
+- Recipes are .tres Resource files in resources/recipes/
+- DebugCommands is the API layer - all debug functionality flows through it for testability
+
+## Future Improvements (from code review)
+
+- Extract BaseInspector class to reduce duplication across npc_inspector, station_inspector, item_inspector, container_inspector
+- Add comments to private helper methods in complex scripts
+- Make PostJobTool load recipes dynamically from RecipeRegistry instead of hardcoding
+- Consider multi-tag support for stations (would require changes to Station, RecipeStep matching, save/load)
+
+---
+
+## 2026-01-09 - PRD Created
+
+- Created prd.json with 21 user stories for Debug & Testing UI system
+- User stories organized in 4 phases:
+  - Phase 1 (US-001 to US-007): DebugCommands API - testable foundation
+  - Phase 2 (US-008 to US-013): Visual UI framework and inspectors
+  - Phase 3 (US-014 to US-016): Spawn and manipulation tools
+  - Phase 4 (US-017 to US-021): Visualizations and integration tests
+- Key architectural decision: DebugCommands singleton as API layer enables headless testing
+- Gap analysis included: need counter, stove, sink, couch stations (use generic station.tscn with tags)
+- Required items: raw_food, toilet_paper, remote, cooked_meal, prepped_food
+
+**Learnings for future iterations:**
+- Build API layer first (DebugCommands) before visual UI
+- All spawn/manipulation operations should emit signals for UI updates
+- Scenario save/load enables repeatable test setups
+- ~80% of debug functionality can be tested headlessly through API
+
+---
+
+## 2026-01-09 - US-001
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented DebugCommands singleton as autoload
+- Added select_entity() with entity_selected/entity_deselected signals
+- Added get_inspection_data() returning Dictionary with type-specific properties:
+  - NPC: type, state, motives (hunger/energy/bladder/hygiene/fun), held_item, current_job
+  - Station: type, tags, slot_contents (input_slots/output_slots), current_user
+  - ItemEntity: type, item_tag, location_state, container
+  - Container: type, name, tags, items, capacity, used
+- Created test_debug_commands.gd with 46 assertions covering all inspection data types
+- Added test to run_tests.sh - all 12 test suites pass (771 total assertions)
+
+**Files changed:**
+- scripts/debug_commands.gd (new)
+- scripts/tests/test_debug_commands.gd (new)
+- scenes/tests/test_debug_commands.tscn (new)
+- project.godot (added DebugCommands autoload)
+- run_tests.sh (added test_debug_commands)
+- AGENTS.md (documented Motive is RefCounted, not Node)
+
+**Learnings for future iterations:**
+- Autoload singletons must NOT use `class_name` - causes "hides an autoload singleton" error
+- `Motive` class is `RefCounted` not `Node` - use correct type annotation
+- Container class in Godot is reserved - project uses `ItemContainer` instead
+- NPC uses `held_items` (array) not `held_item` (single)
+- Signal tests with lambdas can be tricky - verify state directly when possible
+- GDScript closures cannot capture and modify local variables directly - use arrays to capture mutable state
+
+---
+
+## 2026-01-09 - US-002
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented spawn_item(tag, position_or_target) in DebugCommands
+- Handles 3 spawn target types:
+  - Vector2: spawns item ON_GROUND at world position
+  - ItemContainer: spawns item IN_CONTAINER
+  - Station: spawns item in first available input slot
+- Returns spawned ItemEntity reference, emits item_spawned signal
+- Added _get_level_node() helper to find Level node or fallback to scene root
+- Added 7 new tests covering all spawn scenarios (22 new assertions)
+- All 12 test suites pass (793 total assertions)
+
+**Files changed:**
+- scripts/debug_commands.gd (added spawn_item and helpers)
+- scripts/tests/test_debug_commands.gd (added spawn tests)
+
+**Learnings for future iterations:**
+- GDScript closures cannot capture and modify local primitives - use Array to capture mutable values in signal callbacks
+- Spawning entities requires adding to scene tree first, then reparenting occurs via container/station methods
+- Use "level" group to find Level node for spawning, with fallback to current_scene root
+
+---
+
+## 2026-01-09 - US-003
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented spawn_station(type, position, tags) in DebugCommands
+- Supports 8 station types: counter, stove, sink, couch, fridge, toilet, tv, generic
+- Position snaps to configurable grid (default 32px)
+- Each station type has distinct color for visual differentiation
+- Implemented remove_station(station) for runtime-spawned stations only
+- Added station_spawned and station_removed signals
+- Added runtime_stations tracking array with get_runtime_stations() and clear_runtime_stations()
+- Added 9 new tests covering all station spawning scenarios (49 new assertions)
+- All 12 test suites pass (842 total assertions)
+
+**Files changed:**
+- scripts/debug_commands.gd (added spawn_station, remove_station, grid snapping, station type validation)
+- scripts/tests/test_debug_commands.gd (added 9 station spawning tests)
+
+**Learnings for future iterations:**
+- Track runtime-spawned entities separately to allow cleanup without affecting scene-authored entities
+- Grid snapping uses round() for proper centering on grid cells
+- Station visual differentiation via ColorRect color makes debug spawned stations easy to identify
+- The `tags` parameter in spawn_station is accepted but station_tag is used as primary identifier (stations use single tag, not array)
+
+---
+
+## 2026-01-09 - US-004
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented spawn_npc(position, motives_dict) in DebugCommands
+- motives_dict optional - defaults to full motives (100 for all) if not provided
+- Implemented set_npc_motive(npc, motive_name, value) for individual motive changes
+- Implemented set_npc_motives(npc, motives_dict) for batch motive changes
+- Values clamped to 0-100 range (user-friendly), converted to internal -100 to +100 range
+- Added npc_spawned and motive_changed signals
+- Added runtime_npcs tracking array with get_runtime_npcs() and clear_runtime_npcs()
+- Added get_npc_motive(npc, motive_name) helper for reading motive values
+- Added 10 new tests covering all NPC spawning and motive adjustment scenarios (48 new assertions)
+- All 12 test suites pass (890 total assertions)
+
+**Files changed:**
+- scripts/debug_commands.gd (added NPC spawning and motive adjustment methods)
+- scripts/tests/test_debug_commands.gd (added 10 NPC tests)
+
+**Learnings for future iterations:**
+- Motive system uses -100 to +100 internal range, but 0-100 is more intuitive for debug UI
+- Conversion formula: internal = (user_value * 2) - 100 (0→-100, 50→0, 100→+100)
+- NPC motives are initialized in _ready(), so they're available immediately after adding to scene tree
+- Case-insensitive motive names make the API more forgiving (HUNGER, Hunger, hunger all work)
+
+---
+
+## 2026-01-09 - US-005
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented post_job(recipe_path) in DebugCommands
+- Loads recipe from resource path, creates job via JobBoard.post_job()
+- Implemented interrupt_job(job) wrapping JobBoard.interrupt_job
+- Implemented get_all_jobs() returning array of all jobs from JobBoard
+- Implemented get_jobs_by_state(state) filtering jobs by JobState enum
+- Added job_posted_debug and job_interrupted_debug signals
+- Added 10 new tests covering all 3 recipe types and interruption scenarios (40 new assertions)
+- All 12 test suites pass (930 total assertions)
+
+**Files changed:**
+- scripts/debug_commands.gd (added job management methods and signals)
+- scripts/tests/test_debug_commands.gd (added 10 job management tests)
+
+**Learnings for future iterations:**
+- JobBoard already has most functionality - DebugCommands wraps it with debug-specific signals
+- Recipe resources can be loaded at runtime via load(path) as Recipe
+- Job state transitions: POSTED → CLAIMED → IN_PROGRESS → INTERRUPTED/COMPLETED/FAILED
+- Jobs can only be interrupted when IN_PROGRESS (not POSTED or CLAIMED)
+
+---
+
+## 2026-01-09 - US-006
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented paint_wall(grid_position, add_wall) in DebugCommands
+- add_wall=true creates StaticBody2D with collision and visual ColorRect at grid position
+- add_wall=false removes runtime-spawned walls (cannot remove original map walls)
+- AStar navigation mesh updates automatically via set_point_solid()
+- Implemented get_wall_at(grid_position) returning bool for wall detection
+- Added wall_changed signal with grid_position and is_wall parameters
+- Added world_to_grid() and grid_to_world() coordinate conversion helpers
+- Added runtime_walls tracking dictionary with get_runtime_walls() and clear_runtime_walls()
+- Added 9 new tests covering wall add/remove, signal emission, bounds checking (37 new assertions)
+- All 12 test suites pass (967 total assertions)
+
+**Files changed:**
+- scripts/debug_commands.gd (added wall painting methods, signals, and helpers)
+- scripts/tests/test_debug_commands.gd (added 9 wall painting tests with MockLevel helper class)
+
+**Learnings for future iterations:**
+- Runtime GDScript creation with `GDScript.new()` and `reload()` can cause hangs in tests - use inner class instead
+- AStar uses `set_point_solid()` to mark/unmark walls - no need to rebuild entire grid
+- Track runtime walls separately from original map walls to prevent accidental removal
+- Grid position bounds checking required before AStar operations
+- Wall visual uses same WALL_COLOR and TILE_SIZE constants as level.gd for consistency
+
+---
+
+## 2026-01-09 - US-007
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented save_scenario(path) in DebugCommands
+- Saves JSON with version, stations, items, npcs, and walls data
+- Implemented load_scenario(path, clear_first) in DebugCommands
+- clear_first=true (default) removes existing runtime entities before loading
+- Implemented clear_scenario() removing all runtime-spawned entities
+- Added scenario_saved, scenario_loaded, and scenario_cleared signals
+- Added runtime_items tracking array with get_runtime_items() and clear_runtime_items()
+- Scenario data includes:
+  - Stations: type, position, tags
+  - Items: tag, location state, position/station_index/slot_index
+  - NPCs: position, all motive values (0-100 range)
+  - Walls: grid_x, grid_y coordinates
+- Added 14 new tests covering save, load, clear, signals, and complex round-trip scenarios (71 new assertions)
+- All 12 test suites pass (1038 total assertions)
+
+**Files changed:**
+- scripts/debug_commands.gd (added scenario save/load methods, signals, and helpers)
+- scripts/tests/test_debug_commands.gd (added 14 scenario save/load tests)
+- scripts/ralph/prd.json (marked US-007 as passes: true)
+
+**Learnings for future iterations:**
+- Use JSON.stringify with "\t" indent for human-readable scenario files
+- DirAccess.make_dir_recursive_absolute() creates parent directories automatically
+- FileAccess.file_exists() checks before attempting to load
+- Track runtime items separately from spawned items for proper cleanup
+- JSON parse errors accessible via json.get_error_message()
+- Round-trip tests are essential - verify data survives save/clear/load cycle
+
+---
+
+## 2026-01-09 - US-008
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created debug_ui.tscn as CanvasLayer with layer=100 (renders above game)
+- Added SidePanel (PanelContainer) docked to right edge (280px width)
+- Added InspectorSection (VBoxContainer) with placeholder label in SidePanel
+- Added ToolsSection (VBoxContainer) below HSeparator in SidePanel
+- Added BottomBar (PanelContainer) docked to bottom (40px height, excludes SidePanel area)
+- UI is always visible - added DebugUI instance to main.tscn
+- UI uses mouse_filter=1 (PASS) on panels to not block game input in main viewport
+- Created debug_ui.gd script with:
+  - References to inspector_section, tools_section, bottom_bar, job_status_label
+  - Connection to DebugCommands signals (entity_selected, entity_deselected)
+  - Connection to JobBoard signals for real-time job status updates
+  - _update_job_status() displays job counts by state in bottom bar
+- All 12 test suites pass (1038 total assertions)
+
+**Files changed:**
+- scenes/debug_ui.tscn (new)
+- scripts/debug_ui.gd (new)
+- scenes/main.tscn (added DebugUI instance)
+
+**Learnings for future iterations:**
+- CanvasLayer with high layer number ensures UI renders above game elements
+- Use anchors_preset for docking UI to edges (11=right, 12=bottom)
+- mouse_filter=1 (PASS) allows clicks to pass through to game world where UI doesn't cover
+- PanelContainer provides default styling; MarginContainer adds padding inside
+- Connect to existing singleton signals (JobBoard, DebugCommands) for real-time updates
+
+---
+
+## 2026-01-09 - US-009
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented click-to-select system for NPCs, Stations, Items, and Containers
+- Added ClickArea (Area2D with CollisionShape2D) to all selectable entity scenes:
+  - npc.tscn: CircleShape2D matching body collision
+  - station.tscn, container.tscn: RectangleShape2D matching visual size
+  - item_entity.tscn: CircleShape2D with 8px radius
+- Collision layer 8 (bitmask 128) used for click detection, separate from physics
+- Click detection in debug_ui.gd using PhysicsPointQueryParameters2D
+- Screen-to-world coordinate conversion via camera canvas transform
+- Entity priority for overlapping clicks: Items(4) > NPCs(3) > Stations(2) > Containers(1)
+- Visual highlight via modulate pulsing (yellowish tint, oscillates 0.7-1.0 brightness)
+- Selection state tracked in DebugUI, responds to DebugCommands signals
+- Modified camera.gd to pass left/right clicks through for selection handling
+- UI bounds checking to skip click handling when clicking on side panel or bottom bar
+
+**Files changed:**
+- scenes/npc.tscn (added ClickArea with CircleShape2D)
+- scenes/objects/station.tscn (added ClickArea with RectangleShape2D)
+- scenes/objects/item_entity.tscn (added ClickArea with CircleShape2D)
+- scenes/objects/container.tscn (added ClickArea with RectangleShape2D)
+- scripts/debug_ui.gd (added click detection, coordinate conversion, highlight handling)
+- scripts/camera.gd (modified to let left/right clicks pass through)
+- scripts/selection_highlight.gd (removed - highlight handled in DebugUI)
+
+**Learnings for future iterations:**
+- Collision layers are bitmasks: layer N = 2^(N-1), so layer 8 = 128
+- Use `_input()` instead of `_unhandled_input()` when camera may consume events
+- Camera canvas transform affine_inverse() converts screen coords to world coords
+- Dynamic nodes with set_script() don't have lifecycle functions called - handle logic in parent
+- PhysicsPointQueryParameters2D with collide_with_areas=true detects Area2D nodes
+- monitorable=true required on Area2D for point queries to detect it
+
+---
+
+## 2026-01-09 - US-010
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created NPCInspector panel that displays when an NPC is selected
+- Displays NPC name/ID (e.g., "NPC 0") centered at top
+- Displays current state name (IDLE, WALKING, WAITING, USING_OBJECT, HAULING, WORKING)
+- Displays current job info: recipe name, step index, and job state (or "None" if no job)
+- Displays held item tag (or "Empty" if not holding anything)
+- Displays 5 motive bars (hunger, energy, bladder, hygiene, fun) with interactive HSliders
+- Sliders range 0-100 (converted to/from internal -100 to +100 range)
+- Slider changes immediately call DebugCommands.set_npc_motive()
+- Added 3 quick action buttons:
+  - "Make Hungry" sets hunger to 10
+  - "Make Full" sets hunger to 100
+  - "Reset Motives" sets all motives to 100
+- Panel updates in real-time via _process() polling inspection data
+- Integrated into DebugUI: shows NPCInspector when NPC selected, hides placeholder label
+- All 12 test suites pass (1038 total assertions)
+
+**Files changed:**
+- scripts/npc_inspector.gd (new)
+- scenes/npc_inspector.tscn (new)
+- scripts/debug_ui.gd (added NPCInspector integration, _update_inspector_for_entity, _show_npc_inspector, _hide_all_inspectors, _clear_all_inspectors)
+
+**Learnings for future iterations:**
+- Use _process() for real-time UI updates rather than signals for simpler implementation
+- Temporarily disconnect slider signals before programmatic value updates to avoid feedback loops
+- Preload inspector scenes as const for lazy instantiation on first use
+- Inspector panels should have set_npc()/clear() methods for DebugUI to control visibility
+- Motive value conversion: display = (internal + 100) / 2, internal = (display * 2) - 100
+
+---
+
+## 2026-01-09 - US-011
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created StationInspector panel that displays when a Station is selected
+- Displays station name centered at top
+- Displays current tag with remove button (click "tag ×" to remove)
+- Provides tag input field with "Add" button for adding new tags
+- Shows 10 quick-add suggestion buttons: counter, stove, sink, seating, fridge, toilet, tv, cooking, prep, storage
+- Displays current user status: "Status: Available" or "In Use By: [NPC name]"
+- Displays capacity: "Capacity: X/Y slots" showing used vs total slots
+- Displays input slots with index and item tag (or "(empty)")
+- Displays output slots with index and item tag (or "(empty)")
+- Panel updates in real-time via _process() polling inspection data
+- Integrated into DebugUI: shows StationInspector when Station selected
+- All 12 test suites pass (1038 total assertions)
+
+**Files changed:**
+- scripts/station_inspector.gd (new)
+- scenes/station_inspector.tscn (new)
+- scripts/debug_ui.gd (added StationInspector integration, _show_station_inspector)
+
+**Learnings for future iterations:**
+- Follow same pattern as NPCInspector: set_station()/clear() methods, _process() for updates
+- Stations use single station_tag (string), not tags array - tag editing replaces the tag
+- ScrollContainer with horizontal scroll for suggestion buttons handles overflow gracefully
+- Slot displays benefit from consistent formatting: "[index] item_tag" or "[index] (empty)"
+
+---
+
+## 2026-01-09 - US-012
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created ItemInspector panel that displays when an ItemEntity is selected
+- Displays item name (tag capitalized, underscores replaced with spaces) centered at top
+- Displays item tag, item state (RAW, PREPPED, COOKED, DIRTY, BROKEN)
+- Displays location state (ON_GROUND, IN_CONTAINER, IN_SLOT, IN_HAND)
+- Displays holder reference (container/station/NPC name or "None")
+- Displays reservation status (reserved by NPC name or "No")
+- Created ContainerInspector panel that displays when an ItemContainer is selected
+- Displays container name centered at top
+- Displays allowed tags (or "All" if no restrictions)
+- Displays capacity (used/total)
+- Displays item list with indices and item tags
+- Both panels update in real-time via _process() polling inspection data
+- Integrated into DebugUI: added preloads, show methods, updated hide/clear methods
+- All 12 test suites pass (1038 total assertions)
+
+**Files changed:**
+- scripts/item_inspector.gd (new)
+- scenes/item_inspector.tscn (new)
+- scripts/container_inspector.gd (new)
+- scenes/container_inspector.tscn (new)
+- scripts/debug_ui.gd (added ItemInspector and ContainerInspector integration)
+
+**Learnings for future iterations:**
+- Follow established inspector pattern: set_X()/clear() methods, _process() for real-time updates
+- ItemEntity has static helper methods: get_state_name() and get_location_name() for display
+- Container uses allowed_tags array (can be empty = allow all), unlike Station's single tag
+- Items track reserved_by reference for reservation status display
+
+---
+
+## 2026-01-09 - US-013
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created JobPanel as replacement for simple BottomBar with expanded functionality
+- Status bar shows job counts by all 6 states: Posted, Claimed, In Progress, Interrupted, Completed, Failed
+- Click expand button (▲/▼) to toggle job list visibility
+- Expandable job list shows all jobs with columns:
+  - Recipe name
+  - State (color-coded: blue=posted, yellow=claimed, green=in progress, orange=interrupted, red=failed)
+  - Assigned NPC (clickable button to select NPC)
+  - Current step (e.g., "Step 2/5")
+  - Interrupt button (enabled only for IN_PROGRESS jobs)
+- Clicking NPC button calls DebugCommands.select_entity() to select that NPC
+- Interrupt button calls DebugCommands.interrupt_job() and refreshes list
+- Real-time updates via JobBoard signals: job_posted, job_claimed, job_completed, job_released, job_failed, job_interrupted
+- Removed old job status code from debug_ui.gd - JobPanel is now self-contained
+- Updated debug_ui.tscn to use JobPanel instance instead of BottomBar
+- All 12 test suites pass (1038 total assertions)
+- Godot --import validation passes
+
+**Files changed:**
+- scripts/job_panel.gd (new)
+- scenes/job_panel.tscn (new)
+- scripts/debug_ui.gd (removed old job status code, updated references)
+- scenes/debug_ui.tscn (replaced BottomBar with JobPanel instance)
+
+**Learnings for future iterations:**
+- Separate self-contained UI components into their own script/scene pairs for better organization
+- Use custom_minimum_size.y to control panel expansion/collapse height
+- Color-coded state labels improve visual scanning of job status
+- Button.bind() allows passing parameters to signal handlers for dynamic UI elements
+- Job list header row with labels improves readability of dynamic content
+
+---
+
+## 2026-01-09 - US-014
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created SpawnTools panel in ToolsSection with three spawning tools
+- SpawnItemTool: dropdown with 10 item tags (raw_food, prepped_food, cooked_meal, etc.)
+- SpawnStationTool: dropdown with all 8 station types from DebugCommands.VALID_STATION_TYPES
+- SpawnNPCTool: simple button to place NPC
+- Click in world after selecting spawns entity at that position
+- Stations snap to grid automatically via DebugCommands.snap_to_grid()
+- Visual preview shown before click confirms placement:
+  - Items: green semi-transparent 16x16 square
+  - Stations: station-colored semi-transparent 32x32 square (uses STATION_COLORS)
+  - NPCs: blue semi-transparent 24x24 square
+- Preview follows mouse, hides when over UI panels
+- Right-click or Cancel button exits spawn mode without placing
+- All spawns go through DebugCommands API (spawn_item, spawn_station, spawn_npc)
+- Integrated into DebugUI: SpawnTools instantiated in _setup_tools_section(), replaces placeholder
+- Click handling coordination: debug_ui.gd defers to spawn_tools when spawn mode is active
+- All 12 test suites pass (1038 total assertions)
+
+**Files changed:**
+- scripts/spawn_tools.gd (new)
+- scenes/spawn_tools.tscn (new)
+- scripts/debug_ui.gd (added SpawnToolsScene preload, spawn_tools variable, _setup_tools_section(), spawn mode check in _input)
+
+**Learnings for future iterations:**
+- Use SpawnMode enum to track current spawn state (NONE, ITEM, STATION, NPC)
+- Preview node should be added to level/game world, not UI, for correct world-space positioning
+- When multiple UI components handle clicks, check spawn mode first to avoid conflicts
+- OptionButton.item_selected signal index corresponds to array order for mapping selections
+- ColorRect with mouse_filter=IGNORE prevents preview from blocking click detection
+
+---
+
+## 2026-01-09 - US-015
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created WallPaintTool UI panel with Add/Remove toggle buttons
+- Implemented click-to-paint functionality via DebugCommands.paint_wall()
+- Added drag-to-paint support for painting multiple cells in one motion
+- Visual preview shows wall placement before click (semi-transparent tile at cursor)
+- Preview color indicates mode: wall color for Add, red for Remove
+- Grid overlay displayed when tool is active (20x20 grid around cursor)
+- Grid follows cursor position and redraws each frame
+- Integrated into DebugUI tools section with HSeparator
+- Input handling coordinated with SpawnTools - checks is_paint_mode_active()
+- Right-click cancels paint mode
+- All 12 test suites pass (1038 total assertions)
+
+**Files changed:**
+- scripts/wall_paint_tool.gd (new)
+- scenes/wall_paint_tool.tscn (new)
+- scripts/debug_ui.gd (added WallPaintTool integration)
+
+**Learnings for future iterations:**
+- Follow SpawnTools pattern: PaintMode enum, preview node, _is_click_over_ui() check
+- Grid overlay uses draw.connect() and queue_redraw() each frame for dynamic positioning
+- Track is_dragging state to differentiate click vs drag painting
+- Expose is_paint_mode_active() method for DebugUI input coordination
+
+---
+
+## 2026-01-09 - US-016
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created PostJobTool UI panel in ToolsSection
+- Dropdown with 3 recipes: Cook Simple Meal, Use Toilet, Watch TV
+- Post button creates job via DebugCommands.post_job()
+- Status label shows confirmation message with recipe name (green) or error (red)
+- Posted job appears immediately in JobBoard status panel
+- Integrated into DebugUI: added PostJobToolScene preload and instantiation in _setup_tools_section()
+- All 12 test suites pass (1038 total assertions)
+- Godot --import validation passes
+
+**Files changed:**
+- scripts/post_job_tool.gd (new)
+- scenes/post_job_tool.tscn (new)
+- scripts/debug_ui.gd (added PostJobTool preload, variable, and instantiation)
+
+**Learnings for future iterations:**
+- Simple tool panels follow same structure: dropdown for selection, button for action, status label for feedback
+- Store recipe paths in const array alongside display names for easy mapping
+- Color-coded status messages (green=success, red=error) improve user feedback
+- JobPanel auto-updates via JobBoard signals, so no manual refresh needed after posting
+
+---
+
+## 2026-01-09 - US-017
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created PathVisualization node (Node2D) for drawing NPC navigation paths
+- Draws path as light blue line from NPC position to final destination
+- Blue dots (4px radius) at each intermediate waypoint
+- Orange marker (8px radius) at final destination/target
+- Green marker (6px radius) at current NPC position
+- Path updates in real-time via _process() calling queue_redraw()
+- PathVisualization draws only remaining path (from current path_index onwards)
+- Added "Show Path" checkbox toggle in NPCInspector panel
+- Toggle controls path visibility via callback to DebugUI
+- Path visualization cleared when NPC deselected or non-NPC entity selected
+- All 12 test suites pass (1038 total assertions)
+- Godot --import validation passes
+
+**Files changed:**
+- scripts/path_visualization.gd (new)
+- scenes/path_visualization.tscn (new)
+- scripts/npc_inspector.gd (added path toggle checkbox, callback, visibility methods)
+- scenes/npc_inspector.tscn (added PathToggleContainer with checkbox)
+- scripts/debug_ui.gd (added PathVisualizationScene preload, _setup_path_visualization, _clear_path_visualization, _on_path_visibility_changed, _get_level_node)
+
+**Learnings for future iterations:**
+- World-space drawing requires converting world coordinates to local via `world_pos - global_position`
+- Use Node2D.draw_line() and draw_circle() in _draw() for custom visualizations
+- Callback pattern via Callable allows inspector to communicate with DebugUI without tight coupling
+- z_index = 50 ensures visualization draws above game elements but below UI
+- queue_redraw() in _process() provides real-time updates as NPC moves
+
+---
+
+## 2026-01-09 - US-019
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created ScenarioTool UI panel in ToolsSection
+- Implemented 'Save Scenario' button that opens FileDialog for saving to custom path
+- Implemented 'Load Scenario' button that opens FileDialog for loading from custom path
+- Implemented 'Clear All' button that removes all runtime-spawned entities
+- Added 3 quick-save slot buttons (Slot 1, Slot 2, Slot 3) for fast saves
+- Added 3 quick-load slot buttons (Slot 1, Slot 2, Slot 3) for fast loads
+- Quick save/load uses user://scenarios/quicksave_N.json paths
+- Status label shows save/load result with color coding (green=success, red=error)
+- All operations go through DebugCommands API (save_scenario, load_scenario, clear_scenario)
+- Integrated into DebugUI via _setup_tools_section() with HSeparator
+- All 13 test suites pass (1091 total assertions)
+
+**Files changed:**
+- scripts/scenario_tool.gd (new)
+- scenes/scenario_tool.tscn (new)
+- scripts/debug_ui.gd (added ScenarioToolScene preload, scenario_tool variable, instantiation)
+
+**Learnings for future iterations:**
+- Follow established tool pattern: VBoxContainer with header label, buttons, status label
+- FileDialog with ACCESS_USERDATA restricts to user:// directory for security
+- DirAccess.make_dir_recursive_absolute() ensures save directory exists before file operations
+- Quick save slots provide faster workflow than file dialogs for iterative testing
+- Color-coded status messages (green/red) provide immediate feedback on operation success
+
+---
+
+## 2026-01-09 - US-020
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created test_debug_cooking_scenario.gd end-to-end test for full cooking flow
+- Test uses only DebugCommands API (no direct instantiation or mocks)
+- Test creates simple rectangular room level with walls at edges
+- Spawns via DebugCommands: fridge with raw_food, counter, stove, NPC with low hunger
+- Posts job via DebugCommands.post_job(), claims via JobBoard.claim_job()
+- Verifies NPC autonomously: hauls raw_food → preps at counter → cooks at stove
+- Verifies hunger motive increases from 10 to 30+ after completing meal
+- Test runs headlessly and completes in ~700 frames (~12 seconds)
+- Fixed bug in npc.gd: _decide_next_action() now checks if NPC already has a job
+- Added comments to both test_job_integration.gd and test_debug_cooking_scenario.gd explaining their purposes
+- All 14 test suites pass (1110 total assertions)
+
+**Files changed:**
+- scripts/tests/test_debug_cooking_scenario.gd (new)
+- scenes/tests/test_debug_cooking_scenario.tscn (new)
+- scripts/npc.gd (fixed _decide_next_action to not override existing job)
+- scripts/tests/test_job_integration.gd (added clarifying comments)
+- run_tests.sh (added test_debug_cooking_scenario)
+
+**Learnings for future iterations:**
+- NPC's _decide_next_action() must check current_job != null to avoid overriding in-progress jobs
+- Async timer callbacks in _initialize_if_ready() can race with manually started jobs
+- Spawn NPC with full motives first, then set hunger low AFTER claiming job to avoid race conditions
+- End-to-end tests should use real Level with real AStar, not mocks, for realistic testing
+- Position entities inside room bounds (avoid walls at grid edges)
+- Debug position output helps diagnose pathfinding issues (NPC wandering outside room = bug)
+
+---
+
+## 2026-01-09 - US-021
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created test_debug_interruption_scenario.gd end-to-end test for job interruption and resumption
+- Test uses only DebugCommands API (no direct instantiation or mocks)
+- Test spawns: fridge with raw_food, counter, stove, NPC1 with low hunger
+- NPC1 claims job, hauls raw_food to counter, places item and starts prep work
+- Test waits until item is at counter station, then interrupts via DebugCommands.interrupt_job()
+- Verifies item remains at counter after interruption (not dropped or lost)
+- Spawns NPC2 who claims the interrupted job
+- NPC2 recognizes item is already at station, skips hauling, resumes work
+- NPC2 completes prep at counter, cooks at stove, job completes
+- Verifies NPC2's hunger increases after completing meal
+- Test runs headlessly and passes in ~650 frames (~11 seconds)
+- Fixed DebugCommands.interrupt_job() to call NPC's interrupt_current_job() when NPC is actively working
+- Fixed NPC.start_hauling_for_job() to check for items at stations even when step_index=0 (for interrupted jobs)
+- All 15 test suites pass (1134 total assertions)
+
+**Files changed:**
+- scripts/tests/test_debug_interruption_scenario.gd (new)
+- scenes/tests/test_debug_interruption_scenario.tscn (new)
+- scripts/debug_commands.gd (interrupt_job now properly interrupts NPC when they have current_job set)
+- scripts/npc.gd (start_hauling_for_job checks for items at stations for INTERRUPTED/CLAIMED jobs)
+- run_tests.sh (added test_debug_interruption_scenario)
+
+**Learnings for future iterations:**
+- DebugCommands.interrupt_job() must check if NPC.current_job matches the job before calling interrupt_current_job()
+- When resuming interrupted jobs, NPCs should check for items at stations even at step 0
+- The `was_interrupted` check should use job state (INTERRUPTED or CLAIMED) not just step_index > 0
+- Wait for item to be placed at station before interrupting to test "items remain at station" scenario
+- NPC._account_for_existing_items() reduces gather requirements for items already at stations
+
+---

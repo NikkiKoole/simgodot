@@ -1,0 +1,317 @@
+{
+  "project": "SimGodot",
+  "branchName": "ralph/multi-step-interaction-system",
+  "description": "Multi-Step Interaction System - Complex agent behaviors with hauling, physical items, and interruptible sequences",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create ItemEntity resource and node",
+      "description": "As a developer, I need items to exist as physical entities so logistics and interruption work correctly.",
+      "acceptanceCriteria": [
+        "Create ItemEntity class extending Node2D/Node3D with properties: item_id, item_tag, state, reserved_by",
+        "Add ItemState enum: RAW, PREPPED, COOKED, DIRTY, BROKEN",
+        "Add ItemLocation enum: IN_CONTAINER, IN_HAND, IN_SLOT, ON_GROUND",
+        "Items can be spawned in scene and persist when dropped",
+        "Project runs without errors"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Create Container class for bins/chests/stockpiles",
+      "description": "As a developer, I need containers that hold multiple items with capacity and filtering.",
+      "acceptanceCriteria": [
+        "Create Container class that stores array of ItemEntity references",
+        "Add capacity property limiting max items",
+        "Add allowed_tags array for filtering (empty = allow all)",
+        "Implement add_item(), remove_item(), find_item_by_tag() methods",
+        "Implement get_available_items() returning unreserved items",
+        "Project runs without errors"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Create Station class with slots and agent footprint",
+      "description": "As a developer, I need smart stations (stove, toilet, TV) with item slots and interaction points.",
+      "acceptanceCriteria": [
+        "Create Station class with station_tag property",
+        "Add input_slots and output_slots as arrays of Marker2D/Position2D",
+        "Add agent_footprint Marker2D for where agent stands",
+        "Add reserved_by property for agent reservation",
+        "Implement reserve(), release(), is_available() methods",
+        "Implement get_item_in_slot(), place_item_in_slot() methods",
+        "Project runs without errors"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Create RecipeStep resource",
+      "description": "As a developer, I need to define individual steps within an interaction sequence.",
+      "acceptanceCriteria": [
+        "Create RecipeStep class extending Resource",
+        "Add properties: station_tag (String), action (String), duration (float), animation (String)",
+        "Add input_transform Dictionary for item state changes (e.g., {'raw_meat': 'cooked_meat'})",
+        "Resource is saveable as .tres file",
+        "Project runs without errors"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Create Recipe resource",
+      "description": "As a developer, I need to define complete interaction sequences as data.",
+      "acceptanceCriteria": [
+        "Create Recipe class extending Resource",
+        "Add recipe_name (String), inputs (Array of RecipeInput), tools (Array of String)",
+        "Add steps (Array of RecipeStep), outputs (Array of RecipeOutput)",
+        "Add motive_effects Dictionary (e.g., {'hunger': 50})",
+        "Create RecipeInput inner class with: item_tag, quantity, consumed (bool)",
+        "Create RecipeOutput inner class with: item_tag, quantity",
+        "Resource is saveable as .tres file",
+        "Project runs without errors"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Create Job class with state tracking",
+      "description": "As a developer, I need jobs to track work state, progress, and claiming.",
+      "acceptanceCriteria": [
+        "Create Job class with: job_id, recipe reference, priority, claimed_by",
+        "Add JobState enum: POSTED, CLAIMED, IN_PROGRESS, INTERRUPTED, COMPLETED, FAILED",
+        "Add current_step_index tracking progress through recipe",
+        "Add gathered_items array tracking items agent has collected",
+        "Add target_station reference for current work location",
+        "Create test_job.gd and test_job.tscn verifying Job state transitions and properties",
+        "Project runs without errors"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Create JobBoard singleton for global job management",
+      "description": "As a developer, I need a central place to post, query, and claim jobs.",
+      "acceptanceCriteria": [
+        "Create JobBoard as autoload singleton",
+        "Implement post_job(recipe, priority) creating new Job",
+        "Implement get_available_jobs() returning unclaimed POSTED jobs",
+        "Implement get_jobs_for_motive(motive_name) filtering by recipe effects",
+        "Implement claim_job(job, agent) marking job as CLAIMED",
+        "Implement release_job(job) returning job to POSTED state",
+        "Add signals: job_posted, job_claimed, job_completed",
+        "Create test_jobboard.gd and test_jobboard.tscn verifying post/claim/release operations",
+        "Project runs without errors"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Implement requirement validation for jobs",
+      "description": "As an agent, before claiming a job I need to verify all requirements are available.",
+      "acceptanceCriteria": [
+        "Add can_start_job(job) method to JobBoard",
+        "Check all required items exist in accessible containers",
+        "Check required stations are available (not reserved)",
+        "Check required tools are available",
+        "Return false with reason if any requirement missing",
+        "Add tests for can_start_job() with valid/invalid requirements to test_jobboard",
+        "Project runs without errors"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Add item reservation system",
+      "description": "As an agent, I need to reserve items so other agents don't take them.",
+      "acceptanceCriteria": [
+        "Add reserve_item(item, agent) method to ItemEntity",
+        "Add release_item(item) method to ItemEntity",
+        "Add is_reserved() check returning true if reserved_by is set",
+        "Containers' get_available_items() excludes reserved items",
+        "Job claiming reserves all required items",
+        "Job release/completion unreserves items",
+        "Add tests for reserve/release and container filtering to test_items",
+        "Project runs without errors"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Add HAULING state to agent state machine",
+      "description": "As an agent, I need a hauling state to gather items before working.",
+      "acceptanceCriteria": [
+        "Add HAULING state to agent state machine",
+        "In HAULING: agent moves to container with required item",
+        "On arrival: agent picks up item (item.location = IN_HAND)",
+        "Agent tracks held_items array",
+        "After gathering all items, transition to moving to station",
+        "Create test_agent_hauling.gd and scene verifying item pickup behavior",
+        "Project runs without errors"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Add WORKING state to agent state machine",
+      "description": "As an agent, I need a working state to execute recipe steps at stations.",
+      "acceptanceCriteria": [
+        "Add WORKING state to agent state machine",
+        "Agent moves to station's agent_footprint position",
+        "Agent plays animation from current RecipeStep",
+        "Progress timer counts down step duration",
+        "On step complete: apply input_transform to items",
+        "Advance to next step or complete job",
+        "Create test_agent_working.gd and scene verifying step execution and transforms",
+        "Project runs without errors"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Implement job interruption and resumption",
+      "description": "As an agent, if interrupted mid-task, items remain and job can be resumed.",
+      "acceptanceCriteria": [
+        "Add interrupt_job(job) method to JobBoard",
+        "On interrupt: agent drops held items at current location (ON_GROUND or IN_SLOT)",
+        "Job state changes to INTERRUPTED with current_step_index preserved",
+        "All item and station reservations released",
+        "INTERRUPTED jobs appear in get_available_jobs()",
+        "Agent claiming interrupted job resumes from current_step_index",
+        "Add interruption tests to test_jobboard verifying state preservation",
+        "Project runs without errors"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Implement job completion with motive effects",
+      "description": "As an agent, completing a job applies motive changes and spawns outputs.",
+      "acceptanceCriteria": [
+        "Add complete_job(job, agent) method to JobBoard",
+        "Spawn output items at station output_slot",
+        "Apply recipe motive_effects to agent",
+        "Consumed inputs are queue_free()'d",
+        "Non-consumed tools remain (possibly with changed state)",
+        "Job state set to COMPLETED",
+        "Add completion tests verifying motive effects, outputs, and consumed items",
+        "Project runs without errors"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Integrate need system with job posting",
+      "description": "As an agent, my needs should automatically generate jobs.",
+      "acceptanceCriteria": [
+        "When agent need exceeds threshold, query recipes that fulfill it",
+        "Post job for best matching recipe if not already posted",
+        "Agent claims and executes the job",
+        "Job priority based on need urgency",
+        "Create test_need_jobs.gd verifying automatic job posting from needs",
+        "Project runs without errors"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "Create example recipe: Cook Simple Meal",
+      "description": "As a developer, I need a working cooking recipe to test the system.",
+      "acceptanceCriteria": [
+        "Create cook_simple_meal.tres Recipe resource",
+        "Inputs: 1x raw_food (consumed)",
+        "Steps: 1) counter/prep/3s 2) stove/cook/5s",
+        "Output: 1x cooked_meal",
+        "Motive effects: {hunger: 50}",
+        "Agent successfully executes full sequence",
+        "Create test_recipe_cook.gd verifying full cooking sequence execution",
+        "Project runs without errors"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "Create example recipe: Use Toilet",
+      "description": "As a developer, I need a working toilet recipe to test the system.",
+      "acceptanceCriteria": [
+        "Create use_toilet.tres Recipe resource",
+        "Inputs: 1x toilet_paper (consumed)",
+        "Steps: 1) toilet/sit/5s 2) sink/wash_hands/2s",
+        "Output: none (or dirty_toilet state change)",
+        "Motive effects: {bladder: 80}",
+        "Agent successfully executes full sequence",
+        "Create test_recipe_toilet.gd verifying full toilet sequence execution",
+        "Project runs without errors"
+      ],
+      "priority": 16,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "Create example recipe: Watch TV",
+      "description": "As a developer, I need a working TV watching recipe to test the system.",
+      "acceptanceCriteria": [
+        "Create watch_tv.tres Recipe resource",
+        "Inputs: none",
+        "Tools: remote (not consumed)",
+        "Steps: 1) tv/turn_on/1s 2) couch/watch/10s 3) tv/turn_off/1s",
+        "Motive effects: {entertainment: 40}",
+        "Agent successfully executes full sequence",
+        "Create test_recipe_tv.gd verifying full TV watching sequence execution",
+        "Project runs without errors"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "Test interruption with cooking recipe",
+      "description": "As a developer, I need to verify interruption works correctly.",
+      "acceptanceCriteria": [
+        "Interrupt agent mid-cooking (after prep, before cook complete)",
+        "Raw/prepped food remains at station or on ground",
+        "Job shows as INTERRUPTED in JobBoard",
+        "Second agent can claim and resume the job",
+        "Second agent completes cooking from interrupted step",
+        "All interruption assertions implemented as automated tests in test scene",
+        "Project runs without errors"
+      ],
+      "priority": 18,
+      "passes": true,
+      "notes": ""
+    }
+  ]
+}

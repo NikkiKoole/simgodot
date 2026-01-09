@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="Recipe" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/recipe.gd" id="1"]
+[ext_resource type="Resource" path="res://resources/recipes/step_tv_turn_on.tres" id="2"]
+[ext_resource type="Resource" path="res://resources/recipes/step_tv_watch.tres" id="3"]
+[ext_resource type="Resource" path="res://resources/recipes/step_tv_turn_off.tres" id="4"]
+
+[resource]
+script = ExtResource("1")
+recipe_name = "Watch TV"
+inputs = []
+tools = ["remote"]
+steps = [ExtResource("2"), ExtResource("3"), ExtResource("4")]
+outputs = []
+motive_effects = {
+    "fun": 40.0
+}

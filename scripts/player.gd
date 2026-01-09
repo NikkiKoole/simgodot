@@ -11,12 +11,6 @@ extends CharacterBody2D
 var motives: Motive
 var game_clock: GameClock
 
-# Object interaction
-var nearby_objects: Array[InteractableObject] = []
-var current_object: InteractableObject = null
-var is_using_object: bool = false
-var object_use_timer: float = 0.0
-
 const COLLISION_RADIUS: float = 10.0
 
 func _ready() -> void:
@@ -47,16 +41,6 @@ func _physics_process(delta: float) -> void:
 		game_delta = game_clock.get_game_delta(delta)
 	motives.update(game_delta)
 
-	# Handle object interaction
-	if is_using_object:
-		_use_object(delta, game_delta)
-		return
-
-	# Check for interaction input
-	if Input.is_action_just_pressed("interact") and not nearby_objects.is_empty():
-		_start_using_nearest_object()
-		return
-
 	# Get input direction
 	var input_dir := Vector2.ZERO
 	input_dir.x = Input.get_axis("move_left", "move_right")
@@ -85,85 +69,11 @@ func _physics_process(delta: float) -> void:
 			var push_direction := collision.get_normal() * -1
 			collider.receive_push(push_direction * 50.0)
 
-func _start_using_nearest_object() -> void:
-	# Find the closest non-occupied object
-	var closest: InteractableObject = null
-	var closest_dist := INF
-
-	for obj in nearby_objects:
-		if obj.is_occupied:
-			continue
-		var dist := global_position.distance_to(obj.global_position)
-		if dist < closest_dist:
-			closest_dist = dist
-			closest = obj
-
-	if closest == null:
-		return
-
-	if not closest.start_use(self):
-		return
-
-	current_object = closest
-	is_using_object = true
-	object_use_timer = closest.use_duration  # This is in game minutes
-	velocity = Vector2.ZERO
-
-func _use_object(real_delta: float, game_delta: float) -> void:
-	if current_object == null:
-		is_using_object = false
-		return
-
-	# Fulfill motives while using object (using game time)
-	for motive_type in current_object.advertisements:
-		var rate: float = current_object.get_fulfillment_rate(motive_type)
-		motives.fulfill(motive_type, rate * game_delta)
-
-	# Timer counts down in game minutes
-	object_use_timer -= game_delta
-
-	# Allow canceling with movement or interaction
-	if Input.is_action_just_pressed("interact") or _has_movement_input():
-		_stop_using_object()
-		return
-
-	if object_use_timer <= 0.0:
-		_stop_using_object()
-
-func _stop_using_object() -> void:
-	if current_object != null:
-		current_object.stop_use(self)
-		current_object = null
-	is_using_object = false
-
-func _has_movement_input() -> bool:
-	return Input.is_action_pressed("move_left") or Input.is_action_pressed("move_right") or \
-		   Input.is_action_pressed("move_up") or Input.is_action_pressed("move_down")
-
 func _on_motive_depleted(_motive_type: Motive.MotiveType) -> void:
 	pass
 
 func _on_motive_critical(_motive_type: Motive.MotiveType) -> void:
 	pass
 
-func _get_object_hint(motive_type: Motive.MotiveType) -> String:
-	match motive_type:
-		Motive.MotiveType.HUNGER: return "fridge"
-		Motive.MotiveType.ENERGY: return "bed"
-		Motive.MotiveType.BLADDER: return "toilet"
-		Motive.MotiveType.HYGIENE: return "shower"
-		_: return "object"
-
 func set_game_clock(clock: GameClock) -> void:
 	game_clock = clock
-
-# For interaction with objects via collision
-func can_interact_with_object(_obj: InteractableObject) -> bool:
-	return true
-
-func on_object_in_range(obj: InteractableObject) -> void:
-	if not nearby_objects.has(obj):
-		nearby_objects.append(obj)
-
-func on_object_out_of_range(obj: InteractableObject) -> void:
-	nearby_objects.erase(obj)

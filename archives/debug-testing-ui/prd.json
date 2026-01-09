@@ -1,0 +1,378 @@
+{
+  "project": "SimGodot",
+  "branchName": "ralph/debug-testing-ui",
+  "description": "Debug & Testing UI System - Development-focused UI for manual inspection and manipulation of the game world to test the multi-step interaction system",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create DebugCommands singleton API",
+      "description": "As a developer, I need a testable API layer for all debug operations so functionality can be tested headlessly.",
+      "acceptanceCriteria": [
+        "Create DebugCommands as autoload singleton",
+        "Implement select_entity(entity) method that emits entity_selected signal",
+        "Implement get_inspection_data(entity) returning Dictionary with entity properties",
+        "get_inspection_data returns {type, state, motives, held_item, current_job} for NPC",
+        "get_inspection_data returns {type, tags, slot_contents, current_user} for Station",
+        "get_inspection_data returns {type, item_tag, location_state, container} for ItemEntity",
+        "Create test_debug_commands.gd and test_debug_commands.tscn verifying inspection data accuracy",
+        "Project runs without errors"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Foundation for all other debug features - must be testable"
+    },
+    {
+      "id": "US-002",
+      "title": "Implement item spawning via DebugCommands",
+      "description": "As a developer, I need to spawn items programmatically to set up test scenarios.",
+      "acceptanceCriteria": [
+        "Implement spawn_item(tag, position_or_target) in DebugCommands",
+        "When position is Vector2, spawn item ON_GROUND at that position",
+        "When target is Container, spawn item IN_CONTAINER",
+        "When target is Station, spawn item in first available slot",
+        "Return the spawned ItemEntity reference",
+        "Emit item_spawned signal with item reference",
+        "Add tests for all spawn locations (ground, container, station) to test_debug_commands",
+        "Project runs without errors"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Required items: raw_food, toilet_paper, remote, cooked_meal, prepped_food"
+    },
+    {
+      "id": "US-003",
+      "title": "Implement station spawning via DebugCommands",
+      "description": "As a developer, I need to spawn stations programmatically for runtime world configuration.",
+      "acceptanceCriteria": [
+        "Implement spawn_station(type, position, tags) in DebugCommands",
+        "Station types: counter, stove, sink, couch, fridge, toilet, tv, generic",
+        "Position snaps to grid (configurable grid size)",
+        "Tags array applied to spawned station",
+        "Return the spawned Station reference",
+        "Emit station_spawned signal",
+        "Implement remove_station(station) to delete runtime-spawned stations",
+        "Add tests for station spawning with various types and tags",
+        "Project runs without errors"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Use existing station.tscn as base, configure via tags"
+    },
+    {
+      "id": "US-004",
+      "title": "Implement NPC spawning and motive adjustment",
+      "description": "As a developer, I need to spawn NPCs and adjust their motives to trigger specific behaviors.",
+      "acceptanceCriteria": [
+        "Implement spawn_npc(position, motives_dict) in DebugCommands",
+        "motives_dict optional, defaults to full motives if not provided",
+        "Implement set_npc_motive(npc, motive_name, value) for individual motive changes",
+        "Implement set_npc_motives(npc, motives_dict) for batch motive changes",
+        "Values clamped to 0-100 range",
+        "Emit npc_spawned and motive_changed signals",
+        "Add tests for spawning with default/custom motives and motive adjustment",
+        "Project runs without errors"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Key for testing hunger->cooking flow"
+    },
+    {
+      "id": "US-005",
+      "title": "Implement job management via DebugCommands",
+      "description": "As a developer, I need to post and interrupt jobs programmatically.",
+      "acceptanceCriteria": [
+        "Implement post_job(recipe_path) in DebugCommands",
+        "Load recipe from path, create job via JobBoard",
+        "Implement interrupt_job(job) wrapping JobBoard.interrupt_job",
+        "Implement get_all_jobs() returning array of all jobs with states",
+        "Implement get_jobs_by_state(state) filtering jobs",
+        "Emit job_posted_debug and job_interrupted_debug signals",
+        "Add tests for posting all recipe types and interruption",
+        "Project runs without errors"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Recipes: cook_simple_meal, use_toilet, watch_tv"
+    },
+    {
+      "id": "US-006",
+      "title": "Implement wall painting via DebugCommands",
+      "description": "As a developer, I need to add/remove walls at runtime to modify pathfinding.",
+      "acceptanceCriteria": [
+        "Implement paint_wall(grid_position, add_wall) in DebugCommands",
+        "add_wall=true adds wall collision at grid position",
+        "add_wall=false removes wall collision at grid position",
+        "Navigation mesh updates after wall change",
+        "Implement get_wall_at(grid_position) returning bool",
+        "Emit wall_changed signal with position and state",
+        "Add tests for adding, removing walls and verifying collision",
+        "Project runs without errors"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Runtime only - does not modify ASCII map file"
+    },
+    {
+      "id": "US-007",
+      "title": "Implement scenario save/load",
+      "description": "As a developer, I need to save and load test scenarios for repeatable setups.",
+      "acceptanceCriteria": [
+        "Implement save_scenario(path) in DebugCommands",
+        "Saves JSON with: stations (type, position, tags), items (tag, location, container_index), npcs (position, motives), walls",
+        "Implement load_scenario(path, clear_first) in DebugCommands",
+        "clear_first=true removes existing runtime entities before loading",
+        "Implement clear_scenario() removing all runtime-spawned entities",
+        "Add tests for round-trip save/load of complex scenarios",
+        "Project runs without errors"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Enables repeatable test setups and sharing scenarios"
+    },
+    {
+      "id": "US-008",
+      "title": "Create DebugUI scene structure",
+      "description": "As a developer, I need the visual UI framework for debug tools.",
+      "acceptanceCriteria": [
+        "Create debug_ui.tscn as CanvasLayer",
+        "Add SidePanel (PanelContainer) docked to right edge",
+        "Add InspectorSection (VBoxContainer) in SidePanel",
+        "Add ToolsSection (VBoxContainer) in SidePanel below Inspector",
+        "Add BottomBar (PanelContainer) docked to bottom",
+        "UI is always visible (no toggle required)",
+        "UI does not block game input in main viewport area",
+        "Project runs without errors"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Layout foundation - no functionality yet"
+    },
+    {
+      "id": "US-009",
+      "title": "Implement click-to-select system",
+      "description": "As a developer, I need to click entities in the game world to select them.",
+      "acceptanceCriteria": [
+        "Left-click on NPC, Station, Item, or Container selects it",
+        "Selection calls DebugCommands.select_entity()",
+        "Selected entity receives visual highlight (modulate or shader)",
+        "Clicking empty space or another entity changes selection",
+        "SelectionHighlight node follows selected entity",
+        "Selection persists across frames until changed",
+        "Project runs without errors"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Requires collision shapes on all selectable entities"
+    },
+    {
+      "id": "US-010",
+      "title": "Implement NPC Inspector panel",
+      "description": "As a developer, I need to see NPC details when one is selected.",
+      "acceptanceCriteria": [
+        "NPCInspector control shown in InspectorSection when NPC selected",
+        "Displays: NPC name/ID, current state name",
+        "Displays: current job (recipe name, step index) or 'None'",
+        "Displays: held item tag or 'Empty'",
+        "Displays: motive bars (hunger, bladder, fun, energy, hygiene) with values",
+        "Motive bars are interactive sliders that call set_npc_motive on change",
+        "Quick buttons: 'Make Hungry', 'Make Full', 'Reset Motives'",
+        "Panel updates in real-time as NPC state changes",
+        "Project runs without errors"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Implement Station Inspector panel",
+      "description": "As a developer, I need to see station details when one is selected.",
+      "acceptanceCriteria": [
+        "StationInspector control shown when Station selected",
+        "Displays: station name and tags list",
+        "Displays: slot contents (list of items with tags)",
+        "Displays: current user NPC or 'Available'",
+        "Displays: capacity (used/total slots)",
+        "Tags are editable - can add/remove tags",
+        "Common tag suggestions shown (counter, stove, sink, seating)",
+        "Panel updates in real-time",
+        "Project runs without errors"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Implement Item and Container Inspector panels",
+      "description": "As a developer, I need to see item and container details when selected.",
+      "acceptanceCriteria": [
+        "ItemInspector shown when ItemEntity selected",
+        "ItemInspector displays: item tag, location state, container/station/NPC reference",
+        "ContainerInspector shown when Container selected",
+        "ContainerInspector displays: container name, tags, item list, capacity",
+        "Both panels update in real-time",
+        "Project runs without errors"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Implement JobBoard status bar",
+      "description": "As a developer, I need to see job status at a glance.",
+      "acceptanceCriteria": [
+        "BottomBar shows job counts by state: POSTED, CLAIMED, IN_PROGRESS, INTERRUPTED, COMPLETED, FAILED",
+        "Clicking bar expands to show job list",
+        "Each job row shows: recipe name, state, assigned NPC, current step",
+        "Clicking a job selects its assigned NPC (if any)",
+        "'Interrupt' button on IN_PROGRESS jobs",
+        "Job list updates in real-time via JobBoard signals",
+        "Project runs without errors"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Implement Spawn Tools panel",
+      "description": "As a developer, I need UI to spawn items, stations, and NPCs.",
+      "acceptanceCriteria": [
+        "SpawnItemTool in ToolsSection with dropdown of item tags",
+        "Click in world after selecting item to spawn at position",
+        "SpawnStationTool with dropdown of station types",
+        "Click in world to place station at grid-snapped position",
+        "SpawnNPCTool button, click in world to place NPC",
+        "Visual preview shown before click confirms placement",
+        "All spawns go through DebugCommands API",
+        "Project runs without errors"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "Implement Wall Paint tool",
+      "description": "As a developer, I need UI to paint and erase walls.",
+      "acceptanceCriteria": [
+        "WallPaintTool in ToolsSection with Add/Remove toggle",
+        "When active, clicking grid cell adds or removes wall",
+        "Drag to paint multiple cells",
+        "Visual preview shows wall placement before click",
+        "Grid overlay shown when tool is active",
+        "Calls DebugCommands.paint_wall() for each change",
+        "Project runs without errors"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "Implement Post Job tool",
+      "description": "As a developer, I need UI to manually post jobs.",
+      "acceptanceCriteria": [
+        "PostJobTool in ToolsSection with dropdown of recipes",
+        "Recipes: Cook Simple Meal, Use Toilet, Watch TV",
+        "'Post' button creates job via DebugCommands.post_job()",
+        "Confirmation message shown in bottom bar",
+        "Posted job appears in JobBoard status immediately",
+        "Project runs without errors"
+      ],
+      "priority": 16,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "Implement NPC path visualization",
+      "description": "As a developer, I need to see NPC navigation paths for debugging.",
+      "acceptanceCriteria": [
+        "When NPC is selected, their current path is drawn",
+        "Path shown as line with dots at waypoints",
+        "Current target position highlighted",
+        "Path updates in real-time as NPC moves",
+        "PathVisualization node handles drawing",
+        "Can toggle path visibility in inspector",
+        "Project runs without errors"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "Implement station slot visualization",
+      "description": "As a developer, I need to see station slot positions and contents.",
+      "acceptanceCriteria": [
+        "When station is selected, slots shown as overlay",
+        "Empty slots shown as dotted outline rectangles",
+        "Occupied slots show item tag label",
+        "Slot indices labeled (0, 1, 2...)",
+        "Input slots vs output slots distinguished by color",
+        "Agent footprint position shown as marker",
+        "Project runs without errors"
+      ],
+      "priority": 18,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "Implement scenario save/load UI",
+      "description": "As a developer, I need UI to save and load test scenarios.",
+      "acceptanceCriteria": [
+        "ScenarioTool section in ToolsSection",
+        "'Save Scenario' button opens file dialog",
+        "'Load Scenario' button opens file dialog",
+        "'Clear All' button removes runtime entities",
+        "3 quick-save slot buttons (Save 1, Save 2, Save 3)",
+        "3 quick-load slot buttons (Load 1, Load 2, Load 3)",
+        "Status message shows save/load result",
+        "All operations go through DebugCommands API",
+        "Project runs without errors"
+      ],
+      "priority": 19,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "End-to-end test: Cooking scenario",
+      "description": "As a developer, I need to verify the full cooking flow works via Debug UI.",
+      "acceptanceCriteria": [
+        "Create test_debug_cooking_scenario.gd test file",
+        "Test spawns: counter, stove, fridge with raw_food, NPC with low hunger",
+        "Test verifies NPC autonomously: claims cooking job, hauls food, preps, cooks, eats",
+        "Test verifies hunger motive increases after completion",
+        "Test uses only DebugCommands API (no mouse simulation)",
+        "Test runs headlessly and passes",
+        "Project runs without errors"
+      ],
+      "priority": 20,
+      "passes": true,
+      "notes": "Integration test for full system"
+    },
+    {
+      "id": "US-021",
+      "title": "End-to-end test: Interruption scenario",
+      "description": "As a developer, I need to verify interruption works via Debug UI.",
+      "acceptanceCriteria": [
+        "Create test_debug_interruption_scenario.gd test file",
+        "Test spawns cooking setup and posts job",
+        "Test waits for NPC to start cooking, then interrupts",
+        "Test verifies items remain at station",
+        "Test spawns second NPC, verifies they resume and complete",
+        "Test uses only DebugCommands API",
+        "Test runs headlessly and passes",
+        "Project runs without errors"
+      ],
+      "priority": 21,
+      "passes": true,
+      "notes": "Integration test for interruption system"
+    }
+  ]
+}

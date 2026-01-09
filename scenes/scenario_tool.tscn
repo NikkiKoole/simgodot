@@ -1,0 +1,87 @@
+[gd_scene load_steps=2 format=3 uid="uid://c8scenario_tool"]
+
+[ext_resource type="Script" path="res://scripts/scenario_tool.gd" id="1_scenario"]
+
+[node name="ScenarioTool" type="VBoxContainer"]
+offset_right = 260.0
+offset_bottom = 180.0
+script = ExtResource("1_scenario")
+
+[node name="HeaderLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Scenarios"
+horizontal_alignment = 1
+
+[node name="ButtonsContainer" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="SaveButton" type="Button" parent="ButtonsContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Save Scenario"
+tooltip_text = "Save current scenario to a file"
+
+[node name="LoadButton" type="Button" parent="ButtonsContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Load Scenario"
+tooltip_text = "Load a scenario from a file"
+
+[node name="ClearButton" type="Button" parent="."]
+layout_mode = 2
+text = "Clear All"
+tooltip_text = "Remove all runtime-spawned entities"
+
+[node name="QuickSaveLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Quick Save:"
+
+[node name="QuickSaveContainer" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Save1" type="Button" parent="QuickSaveContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Slot 1"
+tooltip_text = "Quick save to slot 1"
+
+[node name="Save2" type="Button" parent="QuickSaveContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Slot 2"
+tooltip_text = "Quick save to slot 2"
+
+[node name="Save3" type="Button" parent="QuickSaveContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Slot 3"
+tooltip_text = "Quick save to slot 3"
+
+[node name="QuickLoadLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Quick Load:"
+
+[node name="QuickLoadContainer" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Load1" type="Button" parent="QuickLoadContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Slot 1"
+tooltip_text = "Quick load from slot 1"
+
+[node name="Load2" type="Button" parent="QuickLoadContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Slot 2"
+tooltip_text = "Quick load from slot 2"
+
+[node name="Load3" type="Button" parent="QuickLoadContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Slot 3"
+tooltip_text = "Quick load from slot 3"
+
+[node name="StatusLabel" type="Label" parent="."]
+layout_mode = 2
+horizontal_alignment = 1

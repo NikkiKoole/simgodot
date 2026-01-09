@@ -1,0 +1,72 @@
+[gd_scene load_steps=3 format=3 uid="uid://debugui001"]
+
+[ext_resource type="Script" path="res://scripts/debug_ui.gd" id="1_debug_ui"]
+[ext_resource type="PackedScene" uid="uid://jobpanel001" path="res://scenes/job_panel.tscn" id="2_job_panel"]
+
+[node name="DebugUI" type="CanvasLayer"]
+script = ExtResource("1_debug_ui")
+layer = 100
+
+[node name="SidePanel" type="PanelContainer" parent="."]
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -280.0
+offset_bottom = -40.0
+grow_horizontal = 0
+grow_vertical = 2
+mouse_filter = 1
+
+[node name="ScrollContainer" type="ScrollContainer" parent="SidePanel"]
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="MarginContainer" type="MarginContainer" parent="SidePanel/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="SidePanel/ScrollContainer/MarginContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="InspectorLabel" type="Label" parent="SidePanel/ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "INSPECTOR"
+horizontal_alignment = 1
+
+[node name="InspectorSection" type="VBoxContainer" parent="SidePanel/ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="PlaceholderLabel" type="Label" parent="SidePanel/ScrollContainer/MarginContainer/VBoxContainer/InspectorSection"]
+layout_mode = 2
+text = "Select an entity to inspect"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="HSeparator" type="HSeparator" parent="SidePanel/ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="ToolsLabel" type="Label" parent="SidePanel/ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "TOOLS"
+horizontal_alignment = 1
+
+[node name="ToolsSection" type="VBoxContainer" parent="SidePanel/ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="PlaceholderLabel" type="Label" parent="SidePanel/ScrollContainer/MarginContainer/VBoxContainer/ToolsSection"]
+layout_mode = 2
+text = "Spawn and debug tools"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="JobPanel" parent="." instance=ExtResource("2_job_panel")]
+mouse_filter = 1

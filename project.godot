@@ -15,6 +15,12 @@ run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 config/icon="res://icon.svg"
 
+[autoload]
+
+JobBoard="*res://scripts/job_board.gd"
+RecipeRegistry="*res://scripts/recipe_registry.gd"
+DebugCommands="*res://scripts/debug_commands.gd"
+
 [display]
 
 window/size/viewport_width=960
