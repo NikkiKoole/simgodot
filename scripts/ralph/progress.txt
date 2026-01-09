@@ -156,3 +156,29 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Jobs can only be interrupted when IN_PROGRESS (not POSTED or CLAIMED)
 
 ---
+
+## 2026-01-09 - US-006
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented paint_wall(grid_position, add_wall) in DebugCommands
+- add_wall=true creates StaticBody2D with collision and visual ColorRect at grid position
+- add_wall=false removes runtime-spawned walls (cannot remove original map walls)
+- AStar navigation mesh updates automatically via set_point_solid()
+- Implemented get_wall_at(grid_position) returning bool for wall detection
+- Added wall_changed signal with grid_position and is_wall parameters
+- Added world_to_grid() and grid_to_world() coordinate conversion helpers
+- Added runtime_walls tracking dictionary with get_runtime_walls() and clear_runtime_walls()
+- Added 9 new tests covering wall add/remove, signal emission, bounds checking (37 new assertions)
+- All 12 test suites pass (967 total assertions)
+
+**Files changed:**
+- scripts/debug_commands.gd (added wall painting methods, signals, and helpers)
+- scripts/tests/test_debug_commands.gd (added 9 wall painting tests with MockLevel helper class)
+
+**Learnings for future iterations:**
+- Runtime GDScript creation with `GDScript.new()` and `reload()` can cause hangs in tests - use inner class instead
+- AStar uses `set_point_solid()` to mark/unmark walls - no need to rebuild entire grid
+- Track runtime walls separately from original map walls to prevent accidental removal
+- Grid position bounds checking required before AStar operations
+- Wall visual uses same WALL_COLOR and TILE_SIZE constants as level.gd for consistency
+
+---
