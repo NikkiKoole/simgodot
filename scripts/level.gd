@@ -17,20 +17,24 @@ var shower_scene: PackedScene = preload("res://scenes/objects/shower.tscn")
 var tv_scene: PackedScene = preload("res://scenes/objects/tv.tscn")
 var computer_scene: PackedScene = preload("res://scenes/objects/computer.tscn")
 var bookshelf_scene: PackedScene = preload("res://scenes/objects/bookshelf.tscn")
+var container_scene: PackedScene = preload("res://scenes/objects/container.tscn")
+var item_entity_scene: PackedScene = preload("res://scenes/objects/item_entity.tscn")
+var station_scene: PackedScene = preload("res://scenes/objects/station.tscn")
 
 # ASCII map of the world - '#' = wall, ' ' = floor, 'P' = player start
 # Object markers: B=bed, F=fridge, T=toilet, S=shower, V=tv, C=computer, K=bookshelf
+# New objects: O=container, i=item, W=station (workstation)
 const WORLD_MAP := """
 #################
 #       #       #
 # B   B #   F   #
 #               #
-# B   B #       #
+# B   B #   O   #
 #       #       #
 ###  ####       #
 #       #########
 #  P        V   #
-#               #
+#     i     W   #
 ###  #####      #
 #   C   #   T   #
 #       #       #
@@ -124,6 +128,15 @@ func _parse_and_build_world() -> void:
 				"K":
 					_spawn_object(bookshelf_scene, pos)
 					walkable_positions.append(pos)
+				"O":
+					_spawn_container(pos)
+					walkable_positions.append(pos)
+				"i":
+					_spawn_item(pos)
+					walkable_positions.append(pos)
+				"W":
+					_spawn_station(pos)
+					walkable_positions.append(pos)
 				" ":
 					walkable_positions.append(pos)
 					wander_positions.append(pos)
@@ -135,6 +148,31 @@ func _spawn_object(scene: PackedScene, pos: Vector2) -> void:
 	obj.position = pos
 	add_child(obj)
 	all_objects.append(obj)
+
+
+func _spawn_container(pos: Vector2, container_name: String = "Storage") -> ItemContainer:
+	var container: ItemContainer = container_scene.instantiate()
+	container.position = pos
+	container.container_name = container_name
+	add_child(container)
+	return container
+
+
+func _spawn_item(pos: Vector2, item_tag: String = "raw_food") -> ItemEntity:
+	var item: ItemEntity = item_entity_scene.instantiate()
+	item.position = pos
+	item.item_tag = item_tag
+	item.location = ItemEntity.ItemLocation.ON_GROUND
+	add_child(item)
+	return item
+
+
+func _spawn_station(pos: Vector2, station_tag: String = "counter") -> Station:
+	var station: Station = station_scene.instantiate()
+	station.position = pos
+	station.station_tag = station_tag
+	add_child(station)
+	return station
 
 func _create_wall(pos: Vector2) -> void:
 	var wall := StaticBody2D.new()

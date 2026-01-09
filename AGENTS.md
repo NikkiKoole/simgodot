@@ -24,6 +24,38 @@ This is a Godot 4.5 simulation game inspired by The Sims, featuring NPCs with mo
 - `scenes/objects/` - Interactable objects and items
 - `scripts/ralph/` - Ralph agent PRD and progress tracking
 
+## Level System (`scripts/level.gd`)
+
+### ASCII Map Characters
+The world is defined via an ASCII map in `WORLD_MAP` constant:
+
+| Char | Object | Scene |
+|------|--------|-------|
+| `#` | Wall | (built-in) |
+| ` ` | Floor (walkable) | (built-in) |
+| `P` | Player start | player.tscn |
+| `B` | Bed | bed.tscn |
+| `F` | Fridge | fridge.tscn |
+| `T` | Toilet | toilet.tscn |
+| `S` | Shower | shower.tscn |
+| `V` | TV | tv.tscn |
+| `C` | Computer | computer.tscn |
+| `K` | Bookshelf | bookshelf.tscn |
+| `O` | Container | container.tscn |
+| `i` | Item | item_entity.tscn |
+| `W` | Station | station.tscn |
+
+### Adding New Objects to ASCII Map
+1. Add scene preload: `var my_scene: PackedScene = preload("res://scenes/objects/my_object.tscn")`
+2. Add character to comment documentation
+3. Add match case in `_parse_and_build_world()`
+4. Create spawn function if needed (for non-InteractableObject types)
+
+### Future Considerations
+- Consider supporting station type variants (e.g., `1`=counter, `2`=stove, `3`=sink)
+- Consider supporting item type variants for different item_tags
+- Consider a data-driven approach for complex level setups
+
 ## Validation
 
 Run Godot validation with:
