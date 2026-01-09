@@ -1,3 +1,38 @@
+## 2026-01-09 - US-016
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created use_toilet.tres Recipe resource for full toilet sequence
+- Created step_toilet_sit.tres RecipeStep: toilet/sit/5s with no transforms
+- Created step_toilet_wash_hands.tres RecipeStep: sink/wash_hands/2s with no transforms
+- Recipe inputs: 1x toilet_paper (consumed)
+- Recipe outputs: none
+- Recipe motive effects: {bladder: 80}
+- Created comprehensive test_recipe_toilet.gd with 10 test functions and 45 assertions:
+  - test_recipe_loads_correctly: Verifies recipe loads from .tres file
+  - test_recipe_has_correct_inputs: Verifies 1x toilet_paper consumed
+  - test_recipe_has_correct_steps: Verifies 2 steps (toilet/sit/5s, sink/wash_hands/2s)
+  - test_recipe_has_no_outputs: Verifies no outputs
+  - test_recipe_has_correct_motive_effects: Verifies bladder: 80 effect
+  - test_step_details: Verifies step animations and no transforms
+  - test_full_toilet_sequence_setup: Verifies job can be created with recipe
+  - test_sit_step_at_toilet: Verifies sit step at toilet station
+  - test_wash_hands_step_at_sink: Verifies wash step at sink station
+  - test_agent_can_execute_full_sequence: Verifies full sequence with motive effects
+- Added test_recipe_toilet to run_tests.sh
+- All tests pass: 564 assertions across 9 test suites
+- Files changed:
+  - resources/recipes/use_toilet.tres (new)
+  - resources/recipes/step_toilet_sit.tres (new)
+  - resources/recipes/step_toilet_wash_hands.tres (new)
+  - scripts/tests/test_recipe_toilet.gd (new)
+  - scenes/tests/test_recipe_toilet.tscn (new)
+  - run_tests.sh (added test_recipe_toilet)
+- **Learnings for future iterations:**
+  - Recipes can have no outputs (toilet use doesn't produce items)
+  - Recipes can have steps with no input_transform (sit, wash_hands just wait)
+  - Bladder motive works like hunger - use Motive.fulfill() to add value
+  - Multi-station sequences work (toilet -> sink)
+---
+
 ## 2026-01-09 - US-015
 Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Created cook_simple_meal.tres Recipe resource for full cooking sequence
