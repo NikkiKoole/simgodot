@@ -339,3 +339,35 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Slot displays benefit from consistent formatting: "[index] item_tag" or "[index] (empty)"
 
 ---
+
+## 2026-01-09 - US-012
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created ItemInspector panel that displays when an ItemEntity is selected
+- Displays item name (tag capitalized, underscores replaced with spaces) centered at top
+- Displays item tag, item state (RAW, PREPPED, COOKED, DIRTY, BROKEN)
+- Displays location state (ON_GROUND, IN_CONTAINER, IN_SLOT, IN_HAND)
+- Displays holder reference (container/station/NPC name or "None")
+- Displays reservation status (reserved by NPC name or "No")
+- Created ContainerInspector panel that displays when an ItemContainer is selected
+- Displays container name centered at top
+- Displays allowed tags (or "All" if no restrictions)
+- Displays capacity (used/total)
+- Displays item list with indices and item tags
+- Both panels update in real-time via _process() polling inspection data
+- Integrated into DebugUI: added preloads, show methods, updated hide/clear methods
+- All 12 test suites pass (1038 total assertions)
+
+**Files changed:**
+- scripts/item_inspector.gd (new)
+- scenes/item_inspector.tscn (new)
+- scripts/container_inspector.gd (new)
+- scenes/container_inspector.tscn (new)
+- scripts/debug_ui.gd (added ItemInspector and ContainerInspector integration)
+
+**Learnings for future iterations:**
+- Follow established inspector pattern: set_X()/clear() methods, _process() for real-time updates
+- ItemEntity has static helper methods: get_state_name() and get_location_name() for display
+- Container uses allowed_tags array (can be empty = allow all), unlike Station's single tag
+- Items track reserved_by reference for reservation status display
+
+---
