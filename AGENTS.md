@@ -6,6 +6,7 @@ This is a Godot 4.5 simulation game inspired by The Sims, featuring NPCs with mo
 ## Code Conventions
 
 ### GDScript Style
+- **IMPORTANT: Use spaces for indentation, NOT tabs** (tabs cause edit matching issues)
 - Use `class_name` at the top of scripts for global class registration
 - Use type hints throughout (e.g., `var name: String = ""`)
 - Use `@export` for inspector-visible properties
