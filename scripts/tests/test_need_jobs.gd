@@ -1,11 +1,16 @@
 extends "res://scripts/tests/test_runner.gd"
 ## Tests for Need System with Job Posting Integration (US-014)
+##
+## NOTE: These tests use the global RecipeRegistry singleton which auto-loads
+## recipes from resources/recipes on startup. Tests work with the real registry
+## by saving/restoring its state or testing relative behavior.
 
 # Preload scripts for creating test instances
 const RecipeRegistryScript = preload("res://scripts/recipe_registry.gd")
 const JobBoardScript = preload("res://scripts/job_board.gd")
 
 var test_area: Node2D
+var _saved_recipes: Array[Recipe] = []
 
 func _ready() -> void:
 	_test_name = "NeedJobs"
@@ -15,11 +20,10 @@ func _ready() -> void:
 func run_tests() -> void:
 	_log_header()
 
-	test_recipe_registry_creation()
-	test_register_recipe()
-	test_get_recipes_for_motive()
-	test_get_best_recipe_for_motive()
-	test_has_recipe_for_motive()
+	test_recipe_registry_register()
+	test_recipe_registry_get_recipes_for_motive()
+	test_recipe_registry_get_best_recipe_for_motive()
+	test_recipe_registry_has_recipe_for_motive()
 	test_automatic_job_posting_when_need_critical()
 	test_job_priority_based_on_urgency()
 	test_no_duplicate_jobs_posted()
@@ -36,14 +40,20 @@ func run_tests() -> void:
 # Helper functions
 # ============================================================================
 
-func _create_recipe_registry() -> Node:
-	var registry = RecipeRegistryScript.new()
-	test_area.add_child(registry)
-	return registry
+## Save the current state of the global RecipeRegistry
+func _save_registry_state() -> void:
+	_saved_recipes = RecipeRegistry.get_all_recipes().duplicate()
 
-func _cleanup_registry(registry: Node) -> void:
-	registry.clear_all_recipes()
-	registry.queue_free()
+## Restore the global RecipeRegistry to its saved state
+func _restore_registry_state() -> void:
+	RecipeRegistry.clear_all_recipes()
+	for recipe in _saved_recipes:
+		RecipeRegistry.register_recipe(recipe)
+	_saved_recipes.clear()
+
+## Get the global RecipeRegistry (for clarity in tests)
+func _get_registry() -> Node:
+	return RecipeRegistry
 
 func _create_job_board() -> Node:
 	var board = JobBoardScript.new()
@@ -99,102 +109,104 @@ func _create_station(tag: String) -> Station:
 	return station
 
 # ============================================================================
-# RecipeRegistry tests
+# RecipeRegistry tests (using global singleton)
 # ============================================================================
 
-func test_recipe_registry_creation() -> void:
-	test("RecipeRegistry creation")
-	var registry = _create_recipe_registry()
-	assert_not_null(registry, "RecipeRegistry should be created")
-	assert_eq(registry.get_recipe_count(), 0, "New registry should have no recipes")
-	_cleanup_registry(registry)
+func test_recipe_registry_register() -> void:
+	test("Register recipe to global registry")
+	_save_registry_state()
 
-func test_register_recipe() -> void:
-	test("Register recipe")
-	var registry = _create_recipe_registry()
-	var recipe := _create_test_recipe("Test Cooking", "hunger", 50.0)
+	var initial_count := RecipeRegistry.get_recipe_count()
+	var recipe := _create_test_recipe("Test Cooking Unique", "hunger", 50.0)
 
-	registry.register_recipe(recipe)
-	assert_eq(registry.get_recipe_count(), 1, "Registry should have 1 recipe")
+	RecipeRegistry.register_recipe(recipe)
+	assert_eq(RecipeRegistry.get_recipe_count(), initial_count + 1, "Registry should have 1 more recipe")
 
 	# Registering same recipe again should not duplicate
-	registry.register_recipe(recipe)
-	assert_eq(registry.get_recipe_count(), 1, "Registry should still have 1 recipe (no duplicates)")
+	RecipeRegistry.register_recipe(recipe)
+	assert_eq(RecipeRegistry.get_recipe_count(), initial_count + 1, "Registry should still have same count (no duplicates)")
 
 	# Register another recipe
-	var recipe2 := _create_test_recipe("Test Fun", "fun", 30.0)
-	registry.register_recipe(recipe2)
-	assert_eq(registry.get_recipe_count(), 2, "Registry should have 2 recipes")
+	var recipe2 := _create_test_recipe("Test Fun Unique", "fun", 30.0)
+	RecipeRegistry.register_recipe(recipe2)
+	assert_eq(RecipeRegistry.get_recipe_count(), initial_count + 2, "Registry should have 2 more recipes")
 
 	# Null recipe should not be registered
-	registry.register_recipe(null)
-	assert_eq(registry.get_recipe_count(), 2, "Null recipe should not be registered")
+	RecipeRegistry.register_recipe(null)
+	assert_eq(RecipeRegistry.get_recipe_count(), initial_count + 2, "Null recipe should not be registered")
 
-	_cleanup_registry(registry)
+	_restore_registry_state()
 
-func test_get_recipes_for_motive() -> void:
-	test("Get recipes for motive")
-	var registry = _create_recipe_registry()
+func test_recipe_registry_get_recipes_for_motive() -> void:
+	test("Get recipes for motive from global registry")
+	_save_registry_state()
 
-	# Register recipes with different motive effects
+	# Clear and add known recipes for controlled testing
+	RecipeRegistry.clear_all_recipes()
+
 	var hunger_recipe1 := _create_test_recipe("Eat Food", "hunger", 50.0)
 	var hunger_recipe2 := _create_test_recipe("Snack", "hunger", 20.0)
 	var fun_recipe := _create_test_recipe("Play Game", "fun", 40.0)
 	var no_motive_recipe := _create_test_recipe("Work Task")
 
-	registry.register_recipe(hunger_recipe1)
-	registry.register_recipe(hunger_recipe2)
-	registry.register_recipe(fun_recipe)
-	registry.register_recipe(no_motive_recipe)
+	RecipeRegistry.register_recipe(hunger_recipe1)
+	RecipeRegistry.register_recipe(hunger_recipe2)
+	RecipeRegistry.register_recipe(fun_recipe)
+	RecipeRegistry.register_recipe(no_motive_recipe)
 
-	var hunger_recipes: Array[Recipe] = registry.get_recipes_for_motive("hunger")
+	var hunger_recipes: Array[Recipe] = RecipeRegistry.get_recipes_for_motive("hunger")
 	assert_array_size(hunger_recipes, 2, "Should have 2 hunger recipes")
 	assert_array_contains(hunger_recipes, hunger_recipe1, "Should contain hunger_recipe1")
 	assert_array_contains(hunger_recipes, hunger_recipe2, "Should contain hunger_recipe2")
 
-	var fun_recipes: Array[Recipe] = registry.get_recipes_for_motive("fun")
+	var fun_recipes: Array[Recipe] = RecipeRegistry.get_recipes_for_motive("fun")
 	assert_array_size(fun_recipes, 1, "Should have 1 fun recipe")
 
-	var energy_recipes: Array[Recipe] = registry.get_recipes_for_motive("energy")
+	var energy_recipes: Array[Recipe] = RecipeRegistry.get_recipes_for_motive("energy")
 	assert_array_size(energy_recipes, 0, "Should have 0 energy recipes")
 
-	_cleanup_registry(registry)
+	_restore_registry_state()
 
-func test_get_best_recipe_for_motive() -> void:
-	test("Get best recipe for motive")
-	var registry = _create_recipe_registry()
+func test_recipe_registry_get_best_recipe_for_motive() -> void:
+	test("Get best recipe for motive from global registry")
+	_save_registry_state()
 
-	# Register recipes with different effect values
+	# Clear and add known recipes for controlled testing
+	RecipeRegistry.clear_all_recipes()
+
 	var low_hunger := _create_test_recipe("Snack", "hunger", 20.0)
 	var high_hunger := _create_test_recipe("Full Meal", "hunger", 80.0)
 	var medium_hunger := _create_test_recipe("Light Meal", "hunger", 50.0)
 
-	registry.register_recipe(low_hunger)
-	registry.register_recipe(high_hunger)
-	registry.register_recipe(medium_hunger)
+	RecipeRegistry.register_recipe(low_hunger)
+	RecipeRegistry.register_recipe(high_hunger)
+	RecipeRegistry.register_recipe(medium_hunger)
 
-	var best: Recipe = registry.get_best_recipe_for_motive("hunger")
+	var best: Recipe = RecipeRegistry.get_best_recipe_for_motive("hunger")
 	assert_eq(best, high_hunger, "Should return recipe with highest effect value")
 	assert_eq(best.get_motive_effect("hunger"), 80.0, "Best recipe should have 80 hunger effect")
 
-	# No matching recipe
-	var no_match: Recipe = registry.get_best_recipe_for_motive("social")
+	# No matching recipe for social
+	var no_match: Recipe = RecipeRegistry.get_best_recipe_for_motive("social")
 	assert_null(no_match, "Should return null for no matching recipes")
 
-	_cleanup_registry(registry)
+	_restore_registry_state()
 
-func test_has_recipe_for_motive() -> void:
-	test("Has recipe for motive")
-	var registry = _create_recipe_registry()
+func test_recipe_registry_has_recipe_for_motive() -> void:
+	test("Has recipe for motive in global registry")
+	_save_registry_state()
+
+	# Clear and add known recipes for controlled testing
+	RecipeRegistry.clear_all_recipes()
 
 	var hunger_recipe := _create_test_recipe("Eat Food", "hunger", 50.0)
-	registry.register_recipe(hunger_recipe)
+	RecipeRegistry.register_recipe(hunger_recipe)
 
-	assert_true(registry.has_recipe_for_motive("hunger"), "Should have recipe for hunger")
-	assert_false(registry.has_recipe_for_motive("fun"), "Should not have recipe for fun")
-	assert_false(registry.has_recipe_for_motive("energy"), "Should not have recipe for energy")
+	assert_true(RecipeRegistry.has_recipe_for_motive("hunger"), "Should have recipe for hunger")
+	assert_false(RecipeRegistry.has_recipe_for_motive("fun"), "Should not have recipe for fun")
+	assert_false(RecipeRegistry.has_recipe_for_motive("energy"), "Should not have recipe for energy")
 
-	_cleanup_registry(registry)
+	_restore_registry_state()
 
 # ============================================================================
 # NPC automatic job posting tests
@@ -298,13 +310,15 @@ func _create_mock_npc(npc_name: String = "MockNPC") -> MockNPC:
 
 func test_automatic_job_posting_when_need_critical() -> void:
 	test("Automatic job posting when need is critical")
-	var registry = _create_recipe_registry()
+	_save_registry_state()
+	RecipeRegistry.clear_all_recipes()
+
 	var board = _create_job_board()
 	var npc := _create_mock_npc()
 
 	# Register a hunger recipe
 	var hunger_recipe := _create_test_recipe("Eat Food", "hunger", 50.0)
-	registry.register_recipe(hunger_recipe)
+	RecipeRegistry.register_recipe(hunger_recipe)
 
 	# Create required station
 	var station := _create_station("counter")
@@ -318,7 +332,7 @@ func test_automatic_job_posting_when_need_critical() -> void:
 	assert_eq(board.get_job_count(), 0, "Board should have no jobs initially")
 
 	# Post job for hunger need
-	var job: Job = npc.try_post_job_for_motive("hunger", Motive.MotiveType.HUNGER, registry, board)
+	var job: Job = npc.try_post_job_for_motive("hunger", Motive.MotiveType.HUNGER, RecipeRegistry, board)
 
 	assert_not_null(job, "Job should be posted")
 	assert_eq(board.get_job_count(), 1, "Board should have 1 job")
@@ -328,19 +342,21 @@ func test_automatic_job_posting_when_need_critical() -> void:
 	station.queue_free()
 	npc.queue_free()
 	_cleanup_job_board(board)
-	_cleanup_registry(registry)
+	_restore_registry_state()
 
 func test_job_priority_based_on_urgency() -> void:
 	test("Job priority based on need urgency")
-	var registry = _create_recipe_registry()
+	_save_registry_state()
+	RecipeRegistry.clear_all_recipes()
+
 	var board = _create_job_board()
 	var npc := _create_mock_npc()
 
 	# Register recipes
 	var hunger_recipe := _create_test_recipe("Eat Food", "hunger", 50.0)
 	var fun_recipe := _create_test_recipe("Have Fun", "fun", 40.0)
-	registry.register_recipe(hunger_recipe)
-	registry.register_recipe(fun_recipe)
+	RecipeRegistry.register_recipe(hunger_recipe)
+	RecipeRegistry.register_recipe(fun_recipe)
 
 	# Create required station
 	var station := _create_station("counter")
@@ -369,23 +385,25 @@ func test_job_priority_based_on_urgency() -> void:
 
 	# Post job with critical hunger and verify priority
 	npc.motives.values[Motive.MotiveType.HUNGER] = -80.0
-	var job: Job = npc.try_post_job_for_motive("hunger", Motive.MotiveType.HUNGER, registry, board)
+	var job: Job = npc.try_post_job_for_motive("hunger", Motive.MotiveType.HUNGER, RecipeRegistry, board)
 	assert_not_null(job, "Job should be posted")
 	assert_eq(job.priority, 90, "Job priority should be 90 for motive at -80")
 
 	station.queue_free()
 	npc.queue_free()
 	_cleanup_job_board(board)
-	_cleanup_registry(registry)
+	_restore_registry_state()
 
 func test_no_duplicate_jobs_posted() -> void:
 	test("No duplicate jobs posted for same need")
-	var registry = _create_recipe_registry()
+	_save_registry_state()
+	RecipeRegistry.clear_all_recipes()
+
 	var board = _create_job_board()
 	var npc := _create_mock_npc()
 
 	var hunger_recipe := _create_test_recipe("Eat Food", "hunger", 50.0)
-	registry.register_recipe(hunger_recipe)
+	RecipeRegistry.register_recipe(hunger_recipe)
 
 	var station := _create_station("counter")
 	npc.available_stations.append(station)
@@ -393,7 +411,7 @@ func test_no_duplicate_jobs_posted() -> void:
 	npc.motives.values[Motive.MotiveType.HUNGER] = -60.0
 
 	# Post first job
-	var job1: Job = npc.try_post_job_for_motive("hunger", Motive.MotiveType.HUNGER, registry, board)
+	var job1: Job = npc.try_post_job_for_motive("hunger", Motive.MotiveType.HUNGER, RecipeRegistry, board)
 	assert_not_null(job1, "First job should be posted")
 	assert_eq(board.get_job_count(), 1, "Board should have 1 job")
 
@@ -406,11 +424,13 @@ func test_no_duplicate_jobs_posted() -> void:
 	station.queue_free()
 	npc.queue_free()
 	_cleanup_job_board(board)
-	_cleanup_registry(registry)
+	_restore_registry_state()
 
 func test_best_executable_recipe_selected() -> void:
 	test("Best executable recipe selected")
-	var registry = _create_recipe_registry()
+	_save_registry_state()
+	RecipeRegistry.clear_all_recipes()
+
 	var board = _create_job_board()
 	var npc := _create_mock_npc()
 
@@ -426,9 +446,9 @@ func test_best_executable_recipe_selected() -> void:
 	# Low effect recipe we can also execute
 	var low_recipe := _create_test_recipe("Snack", "hunger", 20.0)
 
-	registry.register_recipe(high_recipe)
-	registry.register_recipe(medium_recipe)
-	registry.register_recipe(low_recipe)
+	RecipeRegistry.register_recipe(high_recipe)
+	RecipeRegistry.register_recipe(medium_recipe)
+	RecipeRegistry.register_recipe(low_recipe)
 
 	# Create station (all recipes use "counter")
 	var station := _create_station("counter")
@@ -438,7 +458,7 @@ func test_best_executable_recipe_selected() -> void:
 	# We should select medium_recipe as it's the best we can execute
 
 	npc.motives.values[Motive.MotiveType.HUNGER] = -60.0
-	var job: Job = npc.try_post_job_for_motive("hunger", Motive.MotiveType.HUNGER, registry, board)
+	var job: Job = npc.try_post_job_for_motive("hunger", Motive.MotiveType.HUNGER, RecipeRegistry, board)
 
 	assert_not_null(job, "Job should be posted")
 	assert_eq(job.recipe, medium_recipe, "Should select medium recipe (highest executable)")
@@ -450,7 +470,7 @@ func test_best_executable_recipe_selected() -> void:
 	container.add_item(_create_item("rare_ingredient"))
 	npc.available_containers.append(container)
 
-	var job2: Job = npc.try_post_job_for_motive("hunger", Motive.MotiveType.HUNGER, registry, board)
+	var job2: Job = npc.try_post_job_for_motive("hunger", Motive.MotiveType.HUNGER, RecipeRegistry, board)
 
 	assert_not_null(job2, "Job should be posted")
 	assert_eq(job2.recipe, high_recipe, "Should now select high recipe (now executable)")
@@ -460,7 +480,7 @@ func test_best_executable_recipe_selected() -> void:
 	container.queue_free()
 	npc.queue_free()
 	_cleanup_job_board(board)
-	_cleanup_registry(registry)
+	_restore_registry_state()
 
 
 # ============================================================================
@@ -472,7 +492,9 @@ func test_best_executable_recipe_selected() -> void:
 
 func test_two_hungry_npcs_get_separate_jobs() -> void:
 	test("Two hungry NPCs get separate jobs")
-	var registry = _create_recipe_registry()
+	_save_registry_state()
+	RecipeRegistry.clear_all_recipes()
+
 	var board = _create_job_board()
 
 	# Create two hungry NPCs
@@ -481,7 +503,7 @@ func test_two_hungry_npcs_get_separate_jobs() -> void:
 
 	# Register hunger recipe
 	var hunger_recipe := _create_test_recipe("Eat Food", "hunger", 50.0)
-	registry.register_recipe(hunger_recipe)
+	RecipeRegistry.register_recipe(hunger_recipe)
 
 	# Create station (shared by both NPCs)
 	var station := _create_station("counter")
@@ -493,13 +515,13 @@ func test_two_hungry_npcs_get_separate_jobs() -> void:
 	npc_b.motives.values[Motive.MotiveType.HUNGER] = -70.0
 
 	# NPC_A tries to fulfill need first (simulating physics process order)
-	var job_a: Job = npc_a.try_start_job_for_needs(registry, board)
+	var job_a: Job = npc_a.try_start_job_for_needs(RecipeRegistry, board)
 	assert_not_null(job_a, "NPC_A should get a job")
 	assert_eq(job_a.claimed_by, npc_a, "Job should be claimed by NPC_A")
 	assert_eq(job_a.state, Job.JobState.CLAIMED, "Job should be CLAIMED")
 
 	# NPC_B tries next - NPC_A's job is claimed, so NPC_B posts their own
-	var job_b: Job = npc_b.try_start_job_for_needs(registry, board)
+	var job_b: Job = npc_b.try_start_job_for_needs(RecipeRegistry, board)
 	assert_not_null(job_b, "NPC_B should also get a job")
 	assert_eq(job_b.claimed_by, npc_b, "Second job should be claimed by NPC_B")
 	assert_neq(job_a, job_b, "NPCs should have different jobs")
@@ -511,18 +533,20 @@ func test_two_hungry_npcs_get_separate_jobs() -> void:
 	npc_a.queue_free()
 	npc_b.queue_free()
 	_cleanup_job_board(board)
-	_cleanup_registry(registry)
+	_restore_registry_state()
 
 func test_claimed_job_not_visible_to_other_npcs() -> void:
 	test("Claimed job not visible to other NPCs")
-	var registry = _create_recipe_registry()
+	_save_registry_state()
+	RecipeRegistry.clear_all_recipes()
+
 	var board = _create_job_board()
 
 	var npc_a := _create_mock_npc("NPC_A")
 	var npc_b := _create_mock_npc("NPC_B")
 
 	var hunger_recipe := _create_test_recipe("Eat Food", "hunger", 50.0)
-	registry.register_recipe(hunger_recipe)
+	RecipeRegistry.register_recipe(hunger_recipe)
 
 	var station := _create_station("counter")
 	npc_a.available_stations.append(station)
@@ -531,7 +555,7 @@ func test_claimed_job_not_visible_to_other_npcs() -> void:
 	npc_a.motives.values[Motive.MotiveType.HUNGER] = -60.0
 
 	# NPC_A posts and claims a job
-	var job_a: Job = npc_a.try_start_job_for_needs(registry, board)
+	var job_a: Job = npc_a.try_start_job_for_needs(RecipeRegistry, board)
 	assert_not_null(job_a, "NPC_A should get a job")
 
 	# From NPC_B's perspective, there are no available hunger jobs
@@ -546,18 +570,20 @@ func test_claimed_job_not_visible_to_other_npcs() -> void:
 	npc_a.queue_free()
 	npc_b.queue_free()
 	_cleanup_job_board(board)
-	_cleanup_registry(registry)
+	_restore_registry_state()
 
 func test_interrupted_job_claimable_by_other_hungry_npc() -> void:
 	test("Interrupted job claimable by other hungry NPC")
-	var registry = _create_recipe_registry()
+	_save_registry_state()
+	RecipeRegistry.clear_all_recipes()
+
 	var board = _create_job_board()
 
 	var npc_a := _create_mock_npc("NPC_A")
 	var npc_b := _create_mock_npc("NPC_B")
 
 	var hunger_recipe := _create_test_recipe("Eat Food", "hunger", 50.0)
-	registry.register_recipe(hunger_recipe)
+	RecipeRegistry.register_recipe(hunger_recipe)
 
 	var station := _create_station("counter")
 	npc_a.available_stations.append(station)
@@ -567,7 +593,7 @@ func test_interrupted_job_claimable_by_other_hungry_npc() -> void:
 	npc_b.motives.values[Motive.MotiveType.HUNGER] = -70.0
 
 	# NPC_A claims a job
-	var job_a: Job = npc_a.try_start_job_for_needs(registry, board)
+	var job_a: Job = npc_a.try_start_job_for_needs(RecipeRegistry, board)
 	assert_not_null(job_a, "NPC_A should get a job")
 
 	# NPC_A starts working on it
@@ -581,7 +607,7 @@ func test_interrupted_job_claimable_by_other_hungry_npc() -> void:
 
 	# NPC_B should now be able to find and claim the interrupted job
 	# (This is Sims-style behavior: food being cooked shouldn't go to waste)
-	var job_b: Job = npc_b.try_start_job_for_needs(registry, board)
+	var job_b: Job = npc_b.try_start_job_for_needs(RecipeRegistry, board)
 	assert_not_null(job_b, "NPC_B should get a job")
 	assert_eq(job_b, job_a, "NPC_B should claim the interrupted job (not post new one)")
 	assert_eq(job_a.claimed_by, npc_b, "Interrupted job should now be claimed by NPC_B")
@@ -593,18 +619,20 @@ func test_interrupted_job_claimable_by_other_hungry_npc() -> void:
 	npc_a.queue_free()
 	npc_b.queue_free()
 	_cleanup_job_board(board)
-	_cleanup_registry(registry)
+	_restore_registry_state()
 
 func test_non_hungry_npc_ignores_hunger_jobs() -> void:
 	test("Non-hungry NPC ignores hunger jobs")
-	var registry = _create_recipe_registry()
+	_save_registry_state()
+	RecipeRegistry.clear_all_recipes()
+
 	var board = _create_job_board()
 
 	var hungry_npc := _create_mock_npc("Hungry_NPC")
 	var satisfied_npc := _create_mock_npc("Satisfied_NPC")
 
 	var hunger_recipe := _create_test_recipe("Eat Food", "hunger", 50.0)
-	registry.register_recipe(hunger_recipe)
+	RecipeRegistry.register_recipe(hunger_recipe)
 
 	var station := _create_station("counter")
 	hungry_npc.available_stations.append(station)
@@ -617,7 +645,7 @@ func test_non_hungry_npc_ignores_hunger_jobs() -> void:
 	satisfied_npc.motives.values[Motive.MotiveType.FUN] = -40.0
 
 	# Hungry NPC posts a job
-	var job: Job = hungry_npc.try_start_job_for_needs(registry, board)
+	var job: Job = hungry_npc.try_start_job_for_needs(RecipeRegistry, board)
 	assert_not_null(job, "Hungry NPC should post job")
 	assert_eq(board.get_job_count(), 1, "Board should have 1 job")
 
@@ -627,7 +655,7 @@ func test_non_hungry_npc_ignores_hunger_jobs() -> void:
 
 	# Satisfied NPC tries to fulfill needs - their most urgent is FUN, not hunger
 	# Since we have no fun recipes, they shouldn't claim the hunger job
-	var satisfied_job: Job = satisfied_npc.try_start_job_for_needs(registry, board)
+	var satisfied_job: Job = satisfied_npc.try_start_job_for_needs(RecipeRegistry, board)
 	assert_null(satisfied_job, "Satisfied NPC should not get job (no fun recipe)")
 
 	# The hunger job should still be unclaimed
@@ -638,4 +666,4 @@ func test_non_hungry_npc_ignores_hunger_jobs() -> void:
 	hungry_npc.queue_free()
 	satisfied_npc.queue_free()
 	_cleanup_job_board(board)
-	_cleanup_registry(registry)
+	_restore_registry_state()
