@@ -12,6 +12,26 @@
 - Avoid Godot reserved class names: Container, Node, Control, etc. - use prefixes like ItemContainer
 - Station uses Marker2D children for slots/footprint - auto-discovered by name prefix (InputSlot*, OutputSlot*, AgentFootprint)
 - Slot items tracked via Dictionary mapping slot_index to ItemEntity
+- Resources (extending Resource) use class_name for global registration and are saved as .tres files
+- Resources directory: resources/recipes/ for recipe-related resources
+
+---
+
+## 2026-01-09 - US-004
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented RecipeStep class extending Resource for defining individual steps in interaction sequences
+- Added properties: station_tag (String), action (String), duration (float), animation (String)
+- Added input_transform Dictionary for item state transformations (e.g., {"raw_food": "prepped_food"})
+- Added helper methods: get_transformed_tag(), transforms_item(), get_transform_inputs(), get_transform_outputs()
+- Created example_step_prep.tres as example resource file
+- Files changed:
+  - scripts/recipe_step.gd (new)
+  - resources/recipes/example_step_prep.tres (new)
+- **Learnings for future iterations:**
+  - Resources extend Resource class, not Node2D
+  - Resources are saved as .tres files with [gd_resource] header
+  - Use script_class attribute in .tres for typed resources
+  - Helper methods make it easier to work with transform dictionaries
 
 ---
 

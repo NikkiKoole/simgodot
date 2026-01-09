@@ -60,6 +60,14 @@ Note: Despite the name "Godot 3.app", this is actually Godot 4.5.1.
 - `get_available_items()` returns only unreserved items
 - Items are reparented to container when added
 
+### Resource System
+- Resources extend `Resource` class (not Node2D) for pure data classes
+- Resources are saved as `.tres` files in `resources/` directory
+- Recipe resources go in `resources/recipes/`
+- Use `class_name` at top of script for global registration
+- `.tres` files use `[gd_resource]` header with `script_class` attribute for typed resources
+- Resources are ideal for data definitions like RecipeStep, Recipe, etc.
+
 ### Naming Conventions
 - Avoid using Godot reserved class names (Container, Node, Control, etc.)
 - Prefix custom classes to avoid conflicts (e.g., `ItemContainer` instead of `Container`)
