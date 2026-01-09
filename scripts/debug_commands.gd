@@ -13,10 +13,12 @@ signal station_removed(station: Station)
 signal npc_spawned(npc: Node)
 signal motive_changed(npc: Node, motive_name: String, old_value: float, new_value: float)
 signal wall_changed(grid_position: Vector2i, is_wall: bool)
+signal container_spawned(container: ItemContainer)
 
 # Scenes for spawning entities
 const ItemEntityScene = preload("res://scenes/objects/item_entity.tscn")
 const StationScene = preload("res://scenes/objects/station.tscn")
+const ContainerScene = preload("res://scenes/objects/container.tscn")
 const NPCScene = preload("res://scenes/npc.tscn")
 
 # Grid size for snapping station positions (in pixels)
@@ -30,6 +32,9 @@ var runtime_stations: Array[Station] = []
 
 # Track runtime-spawned NPCs for cleanup
 var runtime_npcs: Array[Node] = []
+
+# Track runtime-spawned containers for cleanup
+var runtime_containers: Array[ItemContainer] = []
 
 # Track runtime-spawned walls for cleanup (grid_position -> wall_node)
 var runtime_walls: Dictionary = {}
@@ -514,6 +519,146 @@ func snap_to_grid(position: Vector2, grid_size: int = GRID_SIZE) -> Vector2:
 		round(position.x / grid_size) * grid_size,
 		round(position.y / grid_size) * grid_size
 	)
+
+
+# ============================================================================
+# CONTAINER SPAWNING
+# ============================================================================
+
+## Valid container types for spawning
+const VALID_CONTAINER_TYPES: Array[String] = [
+	"fridge", "crate", "shelf", "bin", "chest", "stockpile"
+]
+
+## Container colors for visual differentiation
+const CONTAINER_COLORS: Dictionary = {
+	"fridge": Color(0.7, 0.85, 0.9, 1.0),    # Light blue (cold)
+	"crate": Color(0.6, 0.45, 0.3, 1.0),     # Brown (wood)
+	"shelf": Color(0.5, 0.4, 0.35, 1.0),     # Dark brown
+	"bin": Color(0.4, 0.45, 0.4, 1.0),       # Gray-green
+	"chest": Color(0.55, 0.4, 0.25, 1.0),    # Brown-orange
+	"stockpile": Color(0.5, 0.5, 0.45, 1.0)  # Gray
+}
+
+## Default allowed tags for each container type
+const CONTAINER_ALLOWED_TAGS: Dictionary = {
+	"fridge": ["raw_food", "prepped_food", "cooked_meal"],
+	"crate": [],       # Allow all
+	"shelf": [],       # Allow all
+	"bin": [],         # Allow all
+	"chest": [],       # Allow all
+	"stockpile": []    # Allow all
+}
+
+
+## Get valid container types for UI dropdowns
+func get_valid_container_types() -> Array[String]:
+	return VALID_CONTAINER_TYPES.duplicate()
+
+
+## Spawn a container at a position
+## type: Container type from VALID_CONTAINER_TYPES
+## position: World position (will be snapped to grid)
+## allowed_tags: Optional array of allowed item tags (empty = allow all)
+## Returns the spawned ItemContainer or null on failure
+func spawn_container(type: String, position: Vector2, allowed_tags: Array = []) -> ItemContainer:
+	# Validate container type
+	if type not in VALID_CONTAINER_TYPES:
+		push_error("DebugCommands.spawn_container: Invalid container type '" + type + "'. Valid types: " + str(VALID_CONTAINER_TYPES))
+		return null
+
+	# Create the container instance
+	var container: ItemContainer = ContainerScene.instantiate()
+
+	# Set container properties
+	container.container_name = type.capitalize() + " (Debug)"
+
+	# Apply allowed tags - use defaults for type if not specified
+	if allowed_tags.is_empty() and CONTAINER_ALLOWED_TAGS.has(type):
+		var default_tags: Array = CONTAINER_ALLOWED_TAGS[type]
+		for tag in default_tags:
+			container.allowed_tags.append(tag)
+	else:
+		for tag in allowed_tags:
+			container.allowed_tags.append(tag)
+
+	# Snap position to grid
+	var snapped_position: Vector2 = snap_to_grid(position)
+
+	# Add to scene tree
+	var level: Node = _get_level_node()
+	if level == null:
+		push_error("DebugCommands.spawn_container: Could not find Level node")
+		container.queue_free()
+		return null
+
+	level.add_child(container)
+	container.global_position = snapped_position
+
+	# Apply color to the sprite
+	_apply_container_color(container, type)
+
+	# Track as runtime-spawned container
+	runtime_containers.append(container)
+
+	# Update all NPCs to know about this new container
+	_notify_npcs_of_new_container(container)
+
+	# Emit signal
+	container_spawned.emit(container)
+
+	return container
+
+
+## Remove a runtime-spawned container
+## Returns true if container was removed, false if it wasn't a runtime container
+func remove_container(container: ItemContainer) -> bool:
+	if container == null:
+		push_error("DebugCommands.remove_container: container is null")
+		return false
+
+	if not is_instance_valid(container):
+		push_error("DebugCommands.remove_container: container is not a valid instance")
+		return false
+
+	# Check if this is a runtime-spawned container
+	var index: int = runtime_containers.find(container)
+	if index == -1:
+		push_error("DebugCommands.remove_container: container was not spawned via DebugCommands")
+		return false
+
+	# Remove from tracking array
+	runtime_containers.remove_at(index)
+
+	# Clear selection if this container was selected
+	if selected_entity == container:
+		deselect_entity()
+
+	# Free the container
+	container.queue_free()
+
+	return true
+
+
+## Get all runtime-spawned containers
+func get_runtime_containers() -> Array[ItemContainer]:
+	return runtime_containers.duplicate()
+
+
+## Clear all runtime-spawned containers
+func clear_runtime_containers() -> void:
+	var containers_to_remove := runtime_containers.duplicate()
+	for container in containers_to_remove:
+		if is_instance_valid(container):
+			remove_container(container)
+	runtime_containers.clear()
+
+
+## Apply the appropriate color to a container's sprite based on its type
+func _apply_container_color(container: ItemContainer, type: String) -> void:
+	var sprite: ColorRect = container.get_node_or_null("Sprite2D")
+	if sprite != null and CONTAINER_COLORS.has(type):
+		sprite.color = CONTAINER_COLORS[type]
 
 
 ## Apply the appropriate color to a station's sprite based on its type

@@ -4,12 +4,14 @@ extends VBoxContainer
 ## All spawns go through the DebugCommands API.
 
 # Spawn mode enum
-enum SpawnMode { NONE, ITEM, STATION, NPC }
+enum SpawnMode { NONE, ITEM, STATION, NPC, CONTAINER, ITEM_INTO_CONTAINER }
 
 # Current spawn mode and selection
 var current_mode: SpawnMode = SpawnMode.NONE
 var selected_item_tag: String = ""
 var selected_station_type: String = ""
+var selected_container_type: String = ""
+var target_container: ItemContainer = null  # For spawning items into containers
 
 # Preview node for showing what will be spawned
 var preview_node: Node2D = null
@@ -27,8 +29,11 @@ var debug_ui: CanvasLayer = null
 # UI elements
 @onready var item_dropdown: OptionButton = $ItemSpawnSection/ItemDropdown
 @onready var item_spawn_btn: Button = $ItemSpawnSection/SpawnItemButton
+@onready var item_into_container_btn: Button = $ItemSpawnSection/SpawnItemIntoContainerButton
 @onready var station_dropdown: OptionButton = $StationSpawnSection/StationDropdown
 @onready var station_spawn_btn: Button = $StationSpawnSection/SpawnStationButton
+@onready var container_dropdown: OptionButton = $ContainerSpawnSection/ContainerDropdown
+@onready var container_spawn_btn: Button = $ContainerSpawnSection/SpawnContainerButton
 @onready var npc_spawn_btn: Button = $NPCSpawnSection/SpawnNPCButton
 @onready var cancel_btn: Button = $CancelButton
 @onready var status_label: Label = $StatusLabel
@@ -38,21 +43,23 @@ func _ready() -> void:
 	# Find the DebugUI parent
 	debug_ui = _find_debug_ui()
 
-	# Populate item dropdown
+	# Populate dropdowns
 	_populate_item_dropdown()
-
-	# Populate station dropdown
 	_populate_station_dropdown()
+	_populate_container_dropdown()
 
 	# Connect button signals
 	item_spawn_btn.pressed.connect(_on_spawn_item_pressed)
+	item_into_container_btn.pressed.connect(_on_spawn_item_into_container_pressed)
 	station_spawn_btn.pressed.connect(_on_spawn_station_pressed)
+	container_spawn_btn.pressed.connect(_on_spawn_container_pressed)
 	npc_spawn_btn.pressed.connect(_on_spawn_npc_pressed)
 	cancel_btn.pressed.connect(_on_cancel_pressed)
 
 	# Connect dropdown signals
 	item_dropdown.item_selected.connect(_on_item_selected)
 	station_dropdown.item_selected.connect(_on_station_selected)
+	container_dropdown.item_selected.connect(_on_container_selected)
 
 	# Initially hide cancel button and status
 	cancel_btn.visible = false
@@ -65,6 +72,9 @@ func _ready() -> void:
 	if station_dropdown.item_count > 0:
 		station_dropdown.select(0)
 		_on_station_selected(0)
+	if container_dropdown.item_count > 0:
+		container_dropdown.select(0)
+		_on_container_selected(0)
 
 
 func _find_debug_ui() -> CanvasLayer:
@@ -91,6 +101,14 @@ func _populate_station_dropdown() -> void:
 		station_dropdown.add_item(display_name)
 
 
+func _populate_container_dropdown() -> void:
+	container_dropdown.clear()
+	var container_types: Array[String] = DebugCommands.get_valid_container_types()
+	for container_type in container_types:
+		var display_name: String = container_type.capitalize()
+		container_dropdown.add_item(display_name)
+
+
 func _on_item_selected(index: int) -> void:
 	if index >= 0 and index < ITEM_TAGS.size():
 		selected_item_tag = ITEM_TAGS[index]
@@ -100,6 +118,12 @@ func _on_station_selected(index: int) -> void:
 	var station_types: Array[String] = DebugCommands.get_valid_station_types()
 	if index >= 0 and index < station_types.size():
 		selected_station_type = station_types[index]
+
+
+func _on_container_selected(index: int) -> void:
+	var container_types: Array[String] = DebugCommands.get_valid_container_types()
+	if index >= 0 and index < container_types.size():
+		selected_container_type = container_types[index]
 
 
 func _on_spawn_item_pressed() -> void:
@@ -113,6 +137,17 @@ func _on_spawn_item_pressed() -> void:
 	_create_preview()
 
 
+func _on_spawn_item_into_container_pressed() -> void:
+	if selected_item_tag.is_empty():
+		status_label.text = "Select an item first"
+		return
+
+	current_mode = SpawnMode.ITEM_INTO_CONTAINER
+	cancel_btn.visible = true
+	status_label.text = "Click a container to add: " + selected_item_tag.replace("_", " ")
+	# No preview for this mode - we're clicking on existing containers
+
+
 func _on_spawn_station_pressed() -> void:
 	if selected_station_type.is_empty():
 		status_label.text = "Select a station type first"
@@ -121,6 +156,17 @@ func _on_spawn_station_pressed() -> void:
 	current_mode = SpawnMode.STATION
 	cancel_btn.visible = true
 	status_label.text = "Click in world to spawn: " + selected_station_type.capitalize()
+	_create_preview()
+
+
+func _on_spawn_container_pressed() -> void:
+	if selected_container_type.is_empty():
+		status_label.text = "Select a container type first"
+		return
+
+	current_mode = SpawnMode.CONTAINER
+	cancel_btn.visible = true
+	status_label.text = "Click in world to spawn: " + selected_container_type.capitalize()
 	_create_preview()
 
 
@@ -157,9 +203,14 @@ func _input(event: InputEvent) -> void:
 			if _is_click_over_ui(event.position):
 				return
 
-			# Handle the spawn
 			var world_pos: Vector2 = _screen_to_world(event.position)
-			_do_spawn(world_pos)
+
+			# Special handling for item-into-container mode
+			if current_mode == SpawnMode.ITEM_INTO_CONTAINER:
+				_handle_container_click(world_pos)
+			else:
+				# Handle the spawn
+				_do_spawn(world_pos)
 
 			# Accept the event to prevent other handlers
 			get_viewport().set_input_as_handled()
@@ -213,6 +264,13 @@ func _do_spawn(world_position: Vector2) -> void:
 			else:
 				status_label.text = "Failed to spawn station"
 
+		SpawnMode.CONTAINER:
+			var container: ItemContainer = DebugCommands.spawn_container(selected_container_type, world_position)
+			if container != null:
+				status_label.text = "Spawned: " + selected_container_type.capitalize()
+			else:
+				status_label.text = "Failed to spawn container"
+
 		SpawnMode.NPC:
 			var npc: Node = DebugCommands.spawn_npc(world_position)
 			if npc != null:
@@ -224,6 +282,75 @@ func _do_spawn(world_position: Vector2) -> void:
 	current_mode = SpawnMode.NONE
 	cancel_btn.visible = false
 	_remove_preview()
+
+
+## Handle click when in ITEM_INTO_CONTAINER mode - find container at click position
+func _handle_container_click(world_position: Vector2) -> void:
+	# Find container at this position
+	var container: ItemContainer = _find_container_at_position(world_position)
+
+	if container == null:
+		status_label.text = "No container found - click on a container"
+		return
+
+	# Check if container allows this item tag
+	if not container.is_tag_allowed(selected_item_tag):
+		status_label.text = "Container doesn't allow: " + selected_item_tag.replace("_", " ")
+		return
+
+	# Check if container has space
+	if not container.has_space():
+		status_label.text = "Container is full"
+		return
+
+	# Spawn the item into the container
+	var item: ItemEntity = DebugCommands.spawn_item(selected_item_tag, container)
+	if item != null:
+		status_label.text = "Added " + selected_item_tag.replace("_", " ") + " to " + container.container_name
+	else:
+		status_label.text = "Failed to add item to container"
+
+	# Exit spawn mode after spawning
+	current_mode = SpawnMode.NONE
+	cancel_btn.visible = false
+
+
+## Find a container at the given world position
+func _find_container_at_position(world_position: Vector2) -> ItemContainer:
+	var viewport: Viewport = get_viewport()
+	if viewport == null:
+		return null
+
+	var world: World2D = viewport.get_world_2d()
+	if world == null:
+		return null
+
+	var space_state: PhysicsDirectSpaceState2D = world.direct_space_state
+	if space_state == null:
+		return null
+
+	# Create a point query at the world position
+	var query := PhysicsPointQueryParameters2D.new()
+	query.position = world_position
+	query.collision_mask = 128  # Layer 8 for click areas
+	query.collide_with_areas = true
+	query.collide_with_bodies = true
+
+	# Query for all objects at this point
+	var results: Array[Dictionary] = space_state.intersect_point(query, 10)
+
+	for result in results:
+		var collider: Node = result.collider
+		# Check if collider is a ClickArea, get its parent
+		if collider is Area2D and collider.name == "ClickArea":
+			var parent: Node = collider.get_parent()
+			if parent is ItemContainer:
+				return parent
+		# Check if collider itself is a container
+		if collider is ItemContainer:
+			return collider
+
+	return null
 
 
 func _create_preview() -> void:
@@ -252,6 +379,15 @@ func _create_preview() -> void:
 				visual.color.a = 0.6  # Make semi-transparent
 			else:
 				visual.color = Color(0.3, 0.5, 0.6, 0.6)
+		SpawnMode.CONTAINER:
+			visual.size = Vector2(32, 32)
+			visual.position = Vector2(-16, -16)
+			# Use container color if available
+			if DebugCommands.CONTAINER_COLORS.has(selected_container_type):
+				visual.color = DebugCommands.CONTAINER_COLORS[selected_container_type]
+				visual.color.a = 0.6  # Make semi-transparent
+			else:
+				visual.color = Color(0.4, 0.3, 0.2, 0.6)  # Brown default
 		SpawnMode.NPC:
 			visual.size = Vector2(24, 24)
 			visual.position = Vector2(-12, -12)
@@ -289,8 +425,8 @@ func _update_preview_position() -> void:
 	preview_node.visible = true
 	var world_pos: Vector2 = _screen_to_world(mouse_screen_pos)
 
-	# Snap station preview to grid
-	if current_mode == SpawnMode.STATION:
+	# Snap station and container preview to grid
+	if current_mode == SpawnMode.STATION or current_mode == SpawnMode.CONTAINER:
 		world_pos = DebugCommands.snap_to_grid(world_pos)
 
 	preview_node.global_position = world_pos
