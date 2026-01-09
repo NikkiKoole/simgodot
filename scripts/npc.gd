@@ -326,6 +326,7 @@ func _decide_next_action() -> void:
 	_pick_random_destination()
 
 ## Try to find and claim a job that fulfills critical needs
+## If no suitable job exists, automatically posts one from available recipes
 ## Returns true if a job was started, false otherwise
 func _try_start_job_for_needs() -> bool:
 	# Get the most urgent motive
@@ -335,12 +336,7 @@ func _try_start_job_for_needs() -> bool:
 	if motive_name.is_empty():
 		return false
 
-	# Query JobBoard for available jobs that affect this motive
-	var job := JobBoard.get_highest_priority_job_for_motive(motive_name)
-	if job == null:
-		return false
-
-	# Check if we can actually start this job (have required items/stations)
+	# Build typed arrays for requirement checking
 	var typed_containers: Array[ItemContainer] = []
 	for c in available_containers:
 		typed_containers.append(c)
@@ -349,6 +345,16 @@ func _try_start_job_for_needs() -> bool:
 	for s in available_stations:
 		typed_stations.append(s)
 
+	# Query JobBoard for available jobs that affect this motive
+	var job := JobBoard.get_highest_priority_job_for_motive(motive_name)
+
+	# If no job exists, try to post one from available recipes
+	if job == null:
+		job = _try_post_job_for_motive(motive_name, urgent_motive, typed_containers, typed_stations)
+		if job == null:
+			return false
+
+	# Check if we can actually start this job (have required items/stations)
 	var result := JobBoard.can_start_job(job, typed_containers, typed_stations)
 	if not result.can_start:
 		return false
@@ -363,6 +369,57 @@ func _try_start_job_for_needs() -> bool:
 		return false
 
 	return true
+
+## Try to post a new job for a motive from available recipes
+## Returns the posted job if successful, null otherwise
+func _try_post_job_for_motive(motive_name: String, motive_type: Motive.MotiveType, containers: Array[ItemContainer], stations: Array[Station]) -> Job:
+	# Check if RecipeRegistry has any recipes for this motive
+	if not RecipeRegistry.has_recipe_for_motive(motive_name):
+		return null
+
+	# Get all recipes that fulfill this motive
+	var matching_recipes := RecipeRegistry.get_recipes_for_motive(motive_name)
+	if matching_recipes.is_empty():
+		return null
+
+	# Find the best recipe we can actually execute (have requirements for)
+	var best_recipe: Recipe = null
+	var best_effect: float = 0.0
+
+	for recipe in matching_recipes:
+		# Check if we have the requirements for this recipe
+		var temp_job := Job.new(recipe, 0)
+		var can_start := JobBoard.can_start_job(temp_job, containers, stations)
+
+		if can_start.can_start:
+			var effect := recipe.get_motive_effect(motive_name)
+			if effect > best_effect:
+				best_effect = effect
+				best_recipe = recipe
+
+	if best_recipe == null:
+		return null
+
+	# Calculate priority based on need urgency
+	var priority := _calculate_job_priority_for_motive(motive_type)
+
+	# Post the job
+	var job := JobBoard.post_job(best_recipe, priority)
+	return job
+
+## Calculate job priority based on motive urgency
+## Higher priority for more urgent (lower value) motives
+## Returns priority from 0-100
+func _calculate_job_priority_for_motive(motive_type: Motive.MotiveType) -> int:
+	var motive_value := motives.get_value(motive_type)
+
+	# Motive ranges from -100 to +100
+	# Convert to priority: -100 motive = 100 priority, +100 motive = 0 priority
+	# Formula: priority = (100 - motive_value) / 2
+	var priority := int((100.0 - motive_value) / 2.0)
+
+	# Clamp to valid range
+	return clampi(priority, 0, 100)
 
 ## Convert MotiveType enum to lowercase string name for recipe matching
 func _motive_type_to_name(motive_type: Motive.MotiveType) -> String:

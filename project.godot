@@ -18,6 +18,7 @@ config/icon="res://icon.svg"
 [autoload]
 
 JobBoard="*res://scripts/job_board.gd"
+RecipeRegistry="*res://scripts/recipe_registry.gd"
 
 [display]
 
