@@ -15,29 +15,11 @@ signal motive_changed(npc: Node, motive_name: String, old_value: float, new_valu
 signal wall_changed(grid_position: Vector2i, is_wall: bool)
 signal container_spawned(container: ItemContainer)
 
-# Scenes for spawning entities
-const ItemEntityScene = preload("res://scenes/objects/item_entity.tscn")
-const StationScene = preload("res://scenes/objects/station.tscn")
-const ContainerScene = preload("res://scenes/objects/container.tscn")
-const NPCScene = preload("res://scenes/npc.tscn")
-
 # Grid size for snapping station positions (in pixels)
 const GRID_SIZE: int = 32
 
 # Currently selected entity
 var selected_entity: Node = null
-
-# Track runtime-spawned stations for cleanup
-var runtime_stations: Array[Station] = []
-
-# Track runtime-spawned NPCs for cleanup
-var runtime_npcs: Array[Node] = []
-
-# Track runtime-spawned containers for cleanup
-var runtime_containers: Array[ItemContainer] = []
-
-# Track runtime-spawned walls for cleanup (grid_position -> wall_node)
-var runtime_walls: Dictionary = {}
 
 
 func _ready() -> void:
@@ -102,14 +84,13 @@ func _get_npc_inspection_data(npc: Node) -> Dictionary:
 func _get_npc_state_name(npc: Node) -> String:
 	if npc.get("current_state") != null:
 		var state: int = npc.current_state
-		# Match NPC.State enum
+		# Match NPC.State enum (USING_OBJECT removed)
 		match state:
 			0: return "IDLE"
 			1: return "WALKING"
 			2: return "WAITING"
-			3: return "USING_OBJECT"
-			4: return "HAULING"
-			5: return "WORKING"
+			3: return "HAULING"
+			4: return "WORKING"
 			_: return "UNKNOWN"
 	return "UNKNOWN"
 
@@ -296,101 +277,97 @@ func spawn_item(tag: String, position_or_target: Variant) -> ItemEntity:
 		push_error("DebugCommands.spawn_item: tag cannot be empty")
 		return null
 
-	# Create the item instance
-	var item: ItemEntity = ItemEntityScene.instantiate()
-	item.item_tag = tag
-
 	# Handle based on target type
 	if position_or_target is Vector2:
-		return _spawn_item_on_ground(item, position_or_target)
+		return _spawn_item_on_ground(tag, position_or_target)
 	elif position_or_target is ItemContainer:
-		return _spawn_item_in_container(item, position_or_target)
+		return _spawn_item_in_container(tag, position_or_target)
 	elif position_or_target is Station:
-		return _spawn_item_at_station(item, position_or_target)
+		return _spawn_item_at_station(tag, position_or_target)
 	else:
 		push_error("DebugCommands.spawn_item: position_or_target must be Vector2, ItemContainer, or Station")
-		item.queue_free()
 		return null
 
 
 ## Spawn an item on the ground at a world position
-func _spawn_item_on_ground(item: ItemEntity, world_position: Vector2) -> ItemEntity:
-	# Add to scene tree - find Level node or use root
+func _spawn_item_on_ground(tag: String, world_position: Vector2) -> ItemEntity:
+	# Add to scene tree via level's API
 	var level: Node = _get_level_node()
 	if level == null:
 		push_error("DebugCommands.spawn_item: Could not find Level node")
-		item.queue_free()
 		return null
 
-	level.add_child(item)
-	item.global_position = world_position
-	item.set_location(ItemEntity.ItemLocation.ON_GROUND)
+	# Use level's unified API
+	var item: ItemEntity = level.add_item(world_position, tag)
+	if item == null:
+		push_error("DebugCommands.spawn_item: level.add_item returned null")
+		return null
 
-	runtime_items.append(item)
 	item_spawned.emit(item)
 	return item
 
 
 ## Spawn an item inside a container
-func _spawn_item_in_container(item: ItemEntity, container: ItemContainer) -> ItemEntity:
+func _spawn_item_in_container(tag: String, container: ItemContainer) -> ItemEntity:
 	# Check if container has space and allows this tag
 	if not container.has_space():
 		push_error("DebugCommands.spawn_item: Container is full")
-		item.queue_free()
 		return null
 
-	if not container.is_tag_allowed(item.item_tag):
-		push_error("DebugCommands.spawn_item: Container does not allow tag '" + item.item_tag + "'")
-		item.queue_free()
+	if not container.is_tag_allowed(tag):
+		push_error("DebugCommands.spawn_item: Container does not allow tag '" + tag + "'")
 		return null
 
-	# Add item to scene tree first (container.add_item will reparent it)
+	# Add item to scene tree via level's API
 	var level: Node = _get_level_node()
 	if level == null:
 		push_error("DebugCommands.spawn_item: Could not find Level node")
-		item.queue_free()
 		return null
 
-	level.add_child(item)
+	# Use level's unified API to create item on ground first
+	var item: ItemEntity = level.add_item(container.global_position, tag)
+	if item == null:
+		push_error("DebugCommands.spawn_item: level.add_item returned null")
+		return null
 
 	# Add to container (this sets location to IN_CONTAINER and reparents)
 	var success: bool = container.add_item(item)
 	if not success:
 		push_error("DebugCommands.spawn_item: Failed to add item to container")
-		item.queue_free()
+		level.remove_item(item)
 		return null
 
-	runtime_items.append(item)
 	item_spawned.emit(item)
 	return item
 
 
 ## Spawn an item at a station's first available input slot
-func _spawn_item_at_station(item: ItemEntity, station: Station) -> ItemEntity:
+func _spawn_item_at_station(tag: String, station: Station) -> ItemEntity:
 	# Find first empty input slot
 	var slot_index: int = station.find_empty_input_slot()
 	if slot_index == -1:
 		push_error("DebugCommands.spawn_item: Station has no empty input slots")
-		item.queue_free()
 		return null
 
-	# Add item to scene tree first (station.place_input_item will reparent it)
+	# Add item to scene tree via level's API
 	var level: Node = _get_level_node()
 	if level == null:
 		push_error("DebugCommands.spawn_item: Could not find Level node")
-		item.queue_free()
 		return null
 
-	level.add_child(item)
+	# Use level's unified API to create item on ground first
+	var item: ItemEntity = level.add_item(station.global_position, tag)
+	if item == null:
+		push_error("DebugCommands.spawn_item: level.add_item returned null")
+		return null
 
 	# Place in station slot (this sets location to IN_SLOT and reparents)
 	var success: bool = station.place_input_item(item, slot_index)
 	if not success:
 		push_error("DebugCommands.spawn_item: Failed to place item in station slot")
-		item.queue_free()
+		level.remove_item(item)
 		return null
 
-	runtime_items.append(item)
 	item_spawned.emit(item)
 	return item
 
@@ -440,39 +417,24 @@ func spawn_station(type: String, position: Vector2, tags: Array = []) -> Station
 		push_error("DebugCommands.spawn_station: Invalid station type '" + type + "'. Valid types: " + str(VALID_STATION_TYPES))
 		return null
 
-	# Create the station instance
-	var station: Station = StationScene.instantiate()
-
-	# Set station properties
-	station.station_tag = type
-	station.station_name = type.capitalize() + " (Debug)"
-
-	# Apply color based on type
-	if STATION_COLORS.has(type):
-		# Color will be applied after adding to scene tree (need access to Sprite2D child)
-		pass
-
 	# Snap position to grid
 	var snapped_position: Vector2 = snap_to_grid(position)
 
-	# Add to scene tree
+	# Add to scene tree via level's API
 	var level: Node = _get_level_node()
 	if level == null:
 		push_error("DebugCommands.spawn_station: Could not find Level node")
-		station.queue_free()
 		return null
 
-	level.add_child(station)
-	station.global_position = snapped_position
+	# Use level's unified API (it handles NPC notification)
+	var station_name: String = type.capitalize() + " (Debug)"
+	var station: Station = level.add_station(snapped_position, type, station_name)
+	if station == null:
+		push_error("DebugCommands.spawn_station: level.add_station returned null")
+		return null
 
 	# Apply color to the sprite
 	_apply_station_color(station, type)
-
-	# Track as runtime-spawned station
-	runtime_stations.append(station)
-
-	# Update all NPCs to know about this new station
-	_notify_npcs_of_new_station(station)
 
 	# Emit signal
 	station_spawned.emit(station)
@@ -480,8 +442,8 @@ func spawn_station(type: String, position: Vector2, tags: Array = []) -> Station
 	return station
 
 
-## Remove a runtime-spawned station
-## Returns true if station was removed, false if it wasn't a runtime station
+## Remove a station from the level
+## Returns true if station was removed, false otherwise
 func remove_station(station: Station) -> bool:
 	if station == null:
 		push_error("DebugCommands.remove_station: station is null")
@@ -491,15 +453,6 @@ func remove_station(station: Station) -> bool:
 		push_error("DebugCommands.remove_station: station is not a valid instance")
 		return false
 
-	# Check if this is a runtime-spawned station
-	var index: int = runtime_stations.find(station)
-	if index == -1:
-		push_error("DebugCommands.remove_station: station was not spawned via DebugCommands")
-		return false
-
-	# Remove from tracking array
-	runtime_stations.remove_at(index)
-
 	# Clear selection if this station was selected
 	if selected_entity == station:
 		deselect_entity()
@@ -507,9 +460,13 @@ func remove_station(station: Station) -> bool:
 	# Emit signal before freeing
 	station_removed.emit(station)
 
-	# Free the station
-	station.queue_free()
+	# Remove via level's API
+	var level: Node = _get_level_node()
+	if level != null and level.has_method("remove_station"):
+		return level.remove_station(station)
 
+	# Fallback: just free directly
+	station.queue_free()
 	return true
 
 
@@ -567,42 +524,29 @@ func spawn_container(type: String, position: Vector2, allowed_tags: Array = []) 
 		push_error("DebugCommands.spawn_container: Invalid container type '" + type + "'. Valid types: " + str(VALID_CONTAINER_TYPES))
 		return null
 
-	# Create the container instance
-	var container: ItemContainer = ContainerScene.instantiate()
-
-	# Set container properties
-	container.container_name = type.capitalize() + " (Debug)"
-
-	# Apply allowed tags - use defaults for type if not specified
-	if allowed_tags.is_empty() and CONTAINER_ALLOWED_TAGS.has(type):
-		var default_tags: Array = CONTAINER_ALLOWED_TAGS[type]
-		for tag in default_tags:
-			container.allowed_tags.append(tag)
-	else:
-		for tag in allowed_tags:
-			container.allowed_tags.append(tag)
-
 	# Snap position to grid
 	var snapped_position: Vector2 = snap_to_grid(position)
 
-	# Add to scene tree
+	# Add to scene tree via level's API
 	var level: Node = _get_level_node()
 	if level == null:
 		push_error("DebugCommands.spawn_container: Could not find Level node")
-		container.queue_free()
 		return null
 
-	level.add_child(container)
-	container.global_position = snapped_position
+	# Apply allowed tags - use defaults for type if not specified
+	var tags_to_use: Array = allowed_tags
+	if tags_to_use.is_empty() and CONTAINER_ALLOWED_TAGS.has(type):
+		tags_to_use = CONTAINER_ALLOWED_TAGS[type]
+
+	# Use level's unified API (it handles NPC notification)
+	var container_name: String = type.capitalize() + " (Debug)"
+	var container: ItemContainer = level.add_container(snapped_position, container_name, tags_to_use)
+	if container == null:
+		push_error("DebugCommands.spawn_container: level.add_container returned null")
+		return null
 
 	# Apply color to the sprite
 	_apply_container_color(container, type)
-
-	# Track as runtime-spawned container
-	runtime_containers.append(container)
-
-	# Update all NPCs to know about this new container
-	_notify_npcs_of_new_container(container)
 
 	# Emit signal
 	container_spawned.emit(container)
@@ -610,8 +554,8 @@ func spawn_container(type: String, position: Vector2, allowed_tags: Array = []) 
 	return container
 
 
-## Remove a runtime-spawned container
-## Returns true if container was removed, false if it wasn't a runtime container
+## Remove a container from the level
+## Returns true if container was removed, false otherwise
 func remove_container(container: ItemContainer) -> bool:
 	if container == null:
 		push_error("DebugCommands.remove_container: container is null")
@@ -621,37 +565,39 @@ func remove_container(container: ItemContainer) -> bool:
 		push_error("DebugCommands.remove_container: container is not a valid instance")
 		return false
 
-	# Check if this is a runtime-spawned container
-	var index: int = runtime_containers.find(container)
-	if index == -1:
-		push_error("DebugCommands.remove_container: container was not spawned via DebugCommands")
-		return false
-
-	# Remove from tracking array
-	runtime_containers.remove_at(index)
-
 	# Clear selection if this container was selected
 	if selected_entity == container:
 		deselect_entity()
 
-	# Free the container
-	container.queue_free()
+	# Remove via level's API
+	var level: Node = _get_level_node()
+	if level != null and level.has_method("remove_container"):
+		return level.remove_container(container)
 
+	# Fallback: just free directly
+	container.queue_free()
 	return true
 
 
-## Get all runtime-spawned containers
+## Get all containers from the level
 func get_runtime_containers() -> Array[ItemContainer]:
-	return runtime_containers.duplicate()
+	var level: Node = _get_level_node()
+	if level != null and level.has_method("get_all_containers"):
+		return level.get_all_containers()
+	return []
 
 
-## Clear all runtime-spawned containers
+## Remove all containers from the level
 func clear_runtime_containers() -> void:
-	var containers_to_remove := runtime_containers.duplicate()
-	for container in containers_to_remove:
+	var level: Node = _get_level_node()
+	if level == null:
+		return
+
+	# Make a copy to avoid modifying array while iterating
+	var containers: Array[ItemContainer] = get_runtime_containers().duplicate()
+	for container in containers:
 		if is_instance_valid(container):
-			remove_container(container)
-	runtime_containers.clear()
+			level.remove_container(container)
 
 
 ## Apply the appropriate color to a container's sprite based on its type
@@ -679,26 +625,26 @@ func get_valid_station_types() -> Array[String]:
 	return VALID_STATION_TYPES.duplicate()
 
 
-## Get all runtime-spawned stations
+## Get all stations from the level
 func get_runtime_stations() -> Array[Station]:
-	# Clean up any freed stations from the list
-	var valid_stations: Array[Station] = []
-	for station in runtime_stations:
-		if is_instance_valid(station):
-			valid_stations.append(station)
-	runtime_stations = valid_stations
-	return runtime_stations.duplicate()
+	var level: Node = _get_level_node()
+	if level != null and level.has_method("get_all_stations"):
+		return level.get_all_stations()
+	return []
 
 
-## Remove all runtime-spawned stations
+## Remove all stations from the level
 func clear_runtime_stations() -> void:
-	# Iterate in reverse to safely remove while iterating
-	for i in range(runtime_stations.size() - 1, -1, -1):
-		var station: Station = runtime_stations[i]
+	var level: Node = _get_level_node()
+	if level == null:
+		return
+
+	# Make a copy to avoid modifying array while iterating
+	var stations: Array[Station] = get_runtime_stations().duplicate()
+	for station in stations:
 		if is_instance_valid(station):
 			station_removed.emit(station)
-			station.queue_free()
-	runtime_stations.clear()
+			level.remove_station(station)
 
 
 # =============================================================================
@@ -726,24 +672,19 @@ const MOTIVE_NAME_TO_TYPE: Dictionary = {
 ##               If not provided, defaults to full motives (100 for all)
 ## Returns the spawned NPC, or null if spawning failed
 func spawn_npc(position: Vector2, motives_dict: Dictionary = {}) -> Node:
-	# Create the NPC instance
-	var npc: Node = NPCScene.instantiate()
-
-	# Add to scene tree
+	# Add to scene tree via level's API
 	var level: Node = _get_level_node()
 	if level == null:
 		push_error("DebugCommands.spawn_npc: Could not find Level node")
-		npc.queue_free()
 		return null
 
-	level.add_child(npc)
-	npc.global_position = position
+	# Use level's unified API (it handles initialization)
+	var npc: Node = level.add_npc(position)
+	if npc == null:
+		push_error("DebugCommands.spawn_npc: level.add_npc returned null")
+		return null
 
-	# Initialize NPC with level data (required for NPC to be active)
-	_initialize_npc_from_level(npc, level)
-
-	# Wait for NPC to initialize (motives are created in _ready)
-	# We need to set motives after the NPC is in the tree
+	# Set motives after NPC is in the tree
 	if npc.get("motives") != null and npc.motives != null:
 		# Set motives - either from provided dict or default to full
 		if motives_dict.is_empty():
@@ -756,83 +697,18 @@ func spawn_npc(position: Vector2, motives_dict: Dictionary = {}) -> Node:
 				var value: float = motives_dict[motive_name]
 				_set_motive_internal(npc, motive_name, value)
 
-	# Track as runtime-spawned NPC
-	runtime_npcs.append(npc)
-
 	# Emit signal
 	npc_spawned.emit(npc)
 
 	return npc
 
 
-## Get all NPCs in the scene (NPCs have a 'motives' property)
+## Get all NPCs from the level
 func _get_all_npcs() -> Array:
-	var npcs: Array = []
 	var level: Node = _get_level_node()
-	if level == null:
-		return npcs
-
-	for child in level.get_children():
-		if child.get("motives") != null:
-			npcs.append(child)
-
-	return npcs
-
-
-## Notify all existing NPCs about a newly spawned station
-func _notify_npcs_of_new_station(station: Station) -> void:
-	var npcs := _get_all_npcs()
-	for npc in npcs:
-		if npc.has_method("set_available_stations") and npc.get("available_stations") != null:
-			var stations: Array[Station] = npc.available_stations.duplicate()
-			if station not in stations:
-				stations.append(station)
-				npc.set_available_stations(stations)
-
-
-## Notify all existing NPCs about a newly spawned container
-func _notify_npcs_of_new_container(container: ItemContainer) -> void:
-	var npcs := _get_all_npcs()
-	for npc in npcs:
-		if npc.has_method("set_available_containers") and npc.get("available_containers") != null:
-			var containers: Array[ItemContainer] = npc.available_containers.duplicate()
-			if container not in containers:
-				containers.append(container)
-				npc.set_available_containers(containers)
-
-
-## Initialize an NPC with required data from the level
-## This sets up pathfinding, available objects, containers, stations, etc.
-func _initialize_npc_from_level(npc: Node, level: Node) -> void:
-	# Get AStar for pathfinding
-	if level.has_method("get_astar"):
-		var astar: AStarGrid2D = level.get_astar()
-		if astar != null and npc.has_method("set_astar"):
-			npc.set_astar(astar)
-
-	# Get walkable positions
-	if level.get("walkable_positions") != null and npc.has_method("set_walkable_positions"):
-		npc.set_walkable_positions(level.walkable_positions)
-
-	# Get wander positions (empty floor tiles for random wandering)
-	if level.get("wander_positions") != null and npc.has_method("set_wander_positions"):
-		npc.set_wander_positions(level.wander_positions)
-
-	# Get available interactable objects
-	if level.get("all_objects") != null and npc.has_method("set_available_objects"):
-		npc.set_available_objects(level.all_objects)
-
-	# Get available containers for hauling
-	if level.get("all_containers") != null and npc.has_method("set_available_containers"):
-		npc.set_available_containers(level.all_containers)
-
-	# Get available stations for working
-	if level.get("all_stations") != null and npc.has_method("set_available_stations"):
-		npc.set_available_stations(level.all_stations)
-
-	# Get game clock reference
-	if level.get("game_clock") != null and npc.has_method("set_game_clock"):
-		npc.set_game_clock(level.game_clock)
+	if level != null and level.has_method("get_all_npcs"):
+		return level.get_all_npcs()
+	return []
 
 
 ## Set a single motive for an NPC
@@ -925,25 +801,25 @@ func _set_all_motives_to_value(npc: Node, value: float) -> void:
 		_set_motive_internal(npc, motive_name, value)
 
 
-## Get all runtime-spawned NPCs
+## Get all NPCs from the level
 func get_runtime_npcs() -> Array[Node]:
-	# Clean up any freed NPCs from the list
-	var valid_npcs: Array[Node] = []
-	for npc in runtime_npcs:
-		if is_instance_valid(npc):
-			valid_npcs.append(npc)
-	runtime_npcs = valid_npcs
-	return runtime_npcs.duplicate()
+	var level: Node = _get_level_node()
+	if level != null and level.has_method("get_all_npcs"):
+		return level.get_all_npcs()
+	return []
 
 
-## Remove all runtime-spawned NPCs
+## Remove all NPCs from the level
 func clear_runtime_npcs() -> void:
-	# Iterate in reverse to safely remove while iterating
-	for i in range(runtime_npcs.size() - 1, -1, -1):
-		var npc: Node = runtime_npcs[i]
+	var level: Node = _get_level_node()
+	if level == null:
+		return
+
+	# Make a copy to avoid modifying array while iterating
+	var npcs: Array[Node] = get_runtime_npcs().duplicate()
+	for npc in npcs:
 		if is_instance_valid(npc):
-			npc.queue_free()
-	runtime_npcs.clear()
+			level.remove_npc(npc)
 
 
 ## Get motive value for an NPC in user-friendly 0-100 range
@@ -1108,27 +984,15 @@ func _add_wall_at(grid_position: Vector2i, level: Node, astar: AStarGrid2D) -> b
 		# Wall already exists, no-op but return true
 		return true
 
-	# Use level's add_wall if available (preferred - keeps walls dictionary in sync)
-	if level.has_method("add_wall"):
-		var success: bool = level.add_wall(grid_position)
-		if success:
-			wall_changed.emit(grid_position, true)
-		return success
+	# Use level's add_wall method
+	if not level.has_method("add_wall"):
+		push_error("DebugCommands._add_wall_at: Level does not have add_wall method")
+		return false
 
-	# Fallback: create wall directly (for levels without add_wall method)
-	var wall: StaticBody2D = _create_wall_node(grid_position)
-	level.add_child(wall)
-
-	# Track the runtime wall
-	runtime_walls[grid_position] = wall
-
-	# Update AStar to mark this point as solid
-	astar.set_point_solid(grid_position, true)
-
-	# Emit signal
-	wall_changed.emit(grid_position, true)
-
-	return true
+	var success: bool = level.add_wall(grid_position)
+	if success:
+		wall_changed.emit(grid_position, true)
+	return success
 
 
 ## Remove a wall at a grid position
@@ -1138,65 +1002,15 @@ func _remove_wall_at(grid_position: Vector2i, level: Node, astar: AStarGrid2D) -
 		# No wall exists, no-op but return true
 		return true
 
-	# Use level's remove_wall if available (handles both original and runtime walls)
-	if level.has_method("remove_wall"):
-		var success: bool = level.remove_wall(grid_position)
-		if success:
-			# Also remove from runtime_walls if it was tracked there
-			runtime_walls.erase(grid_position)
-			wall_changed.emit(grid_position, false)
-		return success
-
-	# Fallback: only remove runtime walls (for levels without remove_wall method)
-	if not runtime_walls.has(grid_position):
-		push_error("DebugCommands.paint_wall: Cannot remove wall at " + str(grid_position) + " - level doesn't support wall removal")
+	# Use level's remove_wall method
+	if not level.has_method("remove_wall"):
+		push_error("DebugCommands._remove_wall_at: Level does not have remove_wall method")
 		return false
 
-	# Get and remove the wall node
-	var wall: StaticBody2D = runtime_walls[grid_position]
-	if is_instance_valid(wall):
-		wall.queue_free()
-
-	runtime_walls.erase(grid_position)
-
-	# Update AStar to mark this point as walkable
-	astar.set_point_solid(grid_position, false)
-
-	# Emit signal
-	wall_changed.emit(grid_position, false)
-
-	return true
-
-
-## Create a wall node at a grid position
-func _create_wall_node(grid_position: Vector2i) -> StaticBody2D:
-	var wall := StaticBody2D.new()
-
-	# Calculate world position (center of tile)
-	var world_pos := Vector2(
-		grid_position.x * WALL_TILE_SIZE + WALL_TILE_SIZE / 2.0,
-		grid_position.y * WALL_TILE_SIZE + WALL_TILE_SIZE / 2.0
-	)
-	wall.position = world_pos
-	wall.collision_layer = 1
-	wall.collision_mask = 0
-
-	# Add collision shape
-	var collision := CollisionShape2D.new()
-	var shape := RectangleShape2D.new()
-	shape.size = Vector2(WALL_TILE_SIZE, WALL_TILE_SIZE)
-	collision.shape = shape
-	wall.add_child(collision)
-
-	# Add visual
-	var visual := ColorRect.new()
-	visual.color = WALL_COLOR
-	visual.size = Vector2(WALL_TILE_SIZE, WALL_TILE_SIZE)
-	visual.position = Vector2(-WALL_TILE_SIZE / 2.0, -WALL_TILE_SIZE / 2.0)
-	wall.add_child(visual)
-
-	return wall
-
+	var success: bool = level.remove_wall(grid_position)
+	if success:
+		wall_changed.emit(grid_position, false)
+	return success
 
 ## Convert a world position to grid position
 func world_to_grid(world_position: Vector2) -> Vector2i:
@@ -1214,41 +1028,27 @@ func grid_to_world(grid_position: Vector2i) -> Vector2:
 	)
 
 
-## Get all runtime-spawned walls
+## Get all walls from the level
 ## Returns dictionary of {grid_position: wall_node}
 func get_runtime_walls() -> Dictionary:
-	# Clean up any freed walls from the dictionary
-	var valid_walls: Dictionary = {}
-	for grid_pos in runtime_walls:
-		var wall: StaticBody2D = runtime_walls[grid_pos]
-		if is_instance_valid(wall):
-			valid_walls[grid_pos] = wall
-	runtime_walls = valid_walls
-	return runtime_walls.duplicate()
+	var level: Node = _get_level_node()
+	if level != null and level.has_method("get_all_walls"):
+		return level.get_all_walls()
+	return {}
 
 
-## Remove all runtime-spawned walls
+## Remove all walls from the level
 func clear_runtime_walls() -> void:
 	var level: Node = _get_level_node()
-	var astar: AStarGrid2D = null
+	if level == null:
+		return
 
-	if level != null and level.has_method("get_astar"):
-		astar = level.get_astar()
-
-	# Remove all runtime walls
-	for grid_pos in runtime_walls:
-		var wall: StaticBody2D = runtime_walls[grid_pos]
-		if is_instance_valid(wall):
-			wall.queue_free()
-
-		# Update AStar if available
-		if astar != null:
-			astar.set_point_solid(grid_pos, false)
-
-		# Emit signal for each removed wall
-		wall_changed.emit(grid_pos, false)
-
-	runtime_walls.clear()
+	# Make a copy to avoid modifying dictionary while iterating
+	var walls: Dictionary = get_runtime_walls().duplicate()
+	for grid_pos in walls:
+		if level.has_method("remove_wall"):
+			level.remove_wall(grid_pos)
+			wall_changed.emit(grid_pos, false)
 
 
 # =============================================================================
@@ -1259,9 +1059,6 @@ func clear_runtime_walls() -> void:
 signal scenario_saved(path: String)
 signal scenario_loaded(path: String)
 signal scenario_cleared()
-
-# Track runtime-spawned items for cleanup and scenario save/load
-var runtime_items: Array[ItemEntity] = []
 
 
 ## Save the current scenario to a JSON file
@@ -1275,6 +1072,7 @@ func save_scenario(path: String) -> bool:
 	var scenario_data: Dictionary = {
 		"version": 1,
 		"stations": _collect_station_data(),
+		"containers": _collect_container_data(),
 		"items": _collect_item_data(),
 		"npcs": _collect_npc_data(),
 		"walls": _collect_wall_data()
@@ -1342,6 +1140,7 @@ func load_scenario(path: String, clear_first: bool = true) -> bool:
 
 	# Load entities
 	_load_stations(scenario_data.get("stations", []))
+	_load_containers(scenario_data.get("containers", []))
 	_load_items(scenario_data.get("items", []))
 	_load_npcs(scenario_data.get("npcs", []))
 	_load_walls(scenario_data.get("walls", []))
@@ -1353,47 +1152,62 @@ func load_scenario(path: String, clear_first: bool = true) -> bool:
 ## Clear all runtime-spawned entities
 func clear_scenario() -> void:
 	clear_runtime_stations()
+	clear_runtime_containers()
 	clear_runtime_items()
 	clear_runtime_npcs()
 	clear_runtime_walls()
 	scenario_cleared.emit()
 
 
-## Get all runtime-spawned items
+## Get all items from the level
 func get_runtime_items() -> Array[ItemEntity]:
-	# Clean up any freed items from the list
-	var valid_items: Array[ItemEntity] = []
-	for item in runtime_items:
-		if is_instance_valid(item):
-			valid_items.append(item)
-	runtime_items = valid_items
-	return runtime_items.duplicate()
+	var level: Node = _get_level_node()
+	if level != null and level.has_method("get_all_items"):
+		return level.get_all_items()
+	return []
 
 
-## Remove all runtime-spawned items
+## Remove all items from the level
 func clear_runtime_items() -> void:
-	for i in range(runtime_items.size() - 1, -1, -1):
-		var item: ItemEntity = runtime_items[i]
+	var level: Node = _get_level_node()
+	if level == null:
+		return
+
+	# Make a copy to avoid modifying array while iterating
+	var items: Array[ItemEntity] = get_runtime_items().duplicate()
+	for item in items:
 		if is_instance_valid(item):
-			item.queue_free()
-	runtime_items.clear()
+			level.remove_item(item)
 
 
 # -----------------------------------------------------------------------------
 # Scenario Data Collection Helpers
 # -----------------------------------------------------------------------------
 
-## Collect data for all runtime stations
+## Collect data for all stations
 func _collect_station_data() -> Array:
 	var stations_data: Array = []
 	for station in get_runtime_stations():
 		if is_instance_valid(station):
 			stations_data.append({
 				"type": station.station_tag,
-				"position": {"x": station.global_position.x, "y": station.global_position.y},
-				"tags": [station.station_tag]  # Station uses single tag, wrap in array for consistency
+				"name": station.station_name,
+				"position": {"x": station.global_position.x, "y": station.global_position.y}
 			})
 	return stations_data
+
+
+## Collect data for all containers
+func _collect_container_data() -> Array:
+	var containers_data: Array = []
+	for container in get_runtime_containers():
+		if is_instance_valid(container):
+			containers_data.append({
+				"name": container.container_name,
+				"position": {"x": container.global_position.x, "y": container.global_position.y},
+				"allowed_tags": container.allowed_tags.duplicate()
+			})
+	return containers_data
 
 
 ## Collect data for all runtime items
@@ -1454,11 +1268,10 @@ func _collect_wall_data() -> Array:
 	return walls_data
 
 
-## Find the index of a container in the runtime items (for reference)
+## Find the index of a container in the level's containers
 func _find_runtime_container_index(container: ItemContainer) -> int:
-	# For now, we don't track containers separately
-	# Return -1 as containers aren't in our runtime tracking
-	return -1
+	var containers: Array[ItemContainer] = get_runtime_containers()
+	return containers.find(container)
 
 
 ## Find the parent station of a node
@@ -1471,7 +1284,7 @@ func _find_parent_station(node: Node) -> Station:
 	return null
 
 
-## Find the index of a station in the runtime stations list
+## Find the index of a station in the level's stations
 func _find_runtime_station_index(station: Station) -> int:
 	var stations: Array[Station] = get_runtime_stations()
 	return stations.find(station)
@@ -1498,17 +1311,45 @@ func _find_item_slot_index(item: ItemEntity, station: Station) -> int:
 
 ## Load stations from scenario data
 func _load_stations(stations_data: Array) -> void:
+	var level: Node = _get_level_node()
+	if level == null:
+		return
+
 	for station_data in stations_data:
 		var type: String = station_data.get("type", "generic")
+		var station_name: String = station_data.get("name", "")
 		var pos_data: Dictionary = station_data.get("position", {})
 		var position := Vector2(pos_data.get("x", 0.0), pos_data.get("y", 0.0))
-		var tags: Array = station_data.get("tags", [])
 
-		spawn_station(type, position, tags)
+		# Use level's API directly to preserve the station name
+		var station: Station = level.add_station(position, type, station_name)
+		if station != null:
+			_apply_station_color(station, type)
+			station_spawned.emit(station)
+
+
+## Load containers from scenario data
+func _load_containers(containers_data: Array) -> void:
+	var level: Node = _get_level_node()
+	if level == null:
+		return
+
+	for container_data in containers_data:
+		var container_name: String = container_data.get("name", "Storage")
+		var pos_data: Dictionary = container_data.get("position", {})
+		var position := Vector2(pos_data.get("x", 0.0), pos_data.get("y", 0.0))
+		var allowed_tags: Array = container_data.get("allowed_tags", [])
+
+		# Use level's API directly
+		var container: ItemContainer = level.add_container(position, container_name, allowed_tags)
+		if container != null:
+			container_spawned.emit(container)
 
 
 ## Load items from scenario data
 func _load_items(items_data: Array) -> void:
+	var stations: Array[Station] = get_runtime_stations()
+
 	for item_data in items_data:
 		var tag: String = item_data.get("tag", "")
 		if tag.is_empty():
@@ -1520,17 +1361,18 @@ func _load_items(items_data: Array) -> void:
 			"ON_GROUND":
 				var pos_data: Dictionary = item_data.get("position", {})
 				var position := Vector2(pos_data.get("x", 0.0), pos_data.get("y", 0.0))
-				var item: ItemEntity = spawn_item(tag, position)
-				if item != null:
-					runtime_items.append(item)
+				spawn_item(tag, position)
 			"IN_SLOT":
 				var station_index: int = item_data.get("station_index", -1)
-				if station_index >= 0 and station_index < runtime_stations.size():
-					var station: Station = runtime_stations[station_index]
-					var item: ItemEntity = spawn_item(tag, station)
-					if item != null:
-						runtime_items.append(item)
-			# IN_CONTAINER handled similarly if we add container tracking
+				if station_index >= 0 and station_index < stations.size():
+					var station: Station = stations[station_index]
+					spawn_item(tag, station)
+			"IN_CONTAINER":
+				var container_index: int = item_data.get("container_index", -1)
+				var containers: Array[ItemContainer] = get_runtime_containers()
+				if container_index >= 0 and container_index < containers.size():
+					var container: ItemContainer = containers[container_index]
+					spawn_item(tag, container)
 
 
 ## Load NPCs from scenario data

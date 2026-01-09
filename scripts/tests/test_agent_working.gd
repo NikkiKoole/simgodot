@@ -37,8 +37,8 @@ func test_npc_has_working_state() -> void:
 	var npc = NPCScene.instantiate()
 	test_area.add_child(npc)
 
-	# WORKING should be state 5 (after IDLE=0, WALKING=1, WAITING=2, USING_OBJECT=3, HAULING=4)
-	assert_eq(npc.State.WORKING, 5, "WORKING should be state 5")
+	# WORKING should be state 4 (after IDLE=0, WALKING=1, WAITING=2, HAULING=3)
+	assert_eq(npc.State.WORKING, 4, "WORKING should be state 4")
 	assert_true(npc.State.has("WORKING"), "State enum should have WORKING")
 
 	npc.queue_free()

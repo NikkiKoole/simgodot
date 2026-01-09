@@ -33,8 +33,8 @@ func test_npc_has_hauling_state() -> void:
 	var npc = NPCScene.instantiate()
 	test_area.add_child(npc)
 
-	# Access the State enum - HAULING should be value 4 (after IDLE=0, WALKING=1, WAITING=2, USING_OBJECT=3)
-	assert_eq(npc.State.HAULING, 4, "HAULING should be state 4")
+	# Access the State enum - HAULING should be value 3 (after IDLE=0, WALKING=1, WAITING=2)
+	assert_eq(npc.State.HAULING, 3, "HAULING should be state 3")
 	assert_true(npc.State.has("HAULING"), "State enum should have HAULING")
 
 	npc.queue_free()

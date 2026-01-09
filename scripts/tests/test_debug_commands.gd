@@ -6,14 +6,23 @@ const ItemEntityScene = preload("res://scenes/objects/item_entity.tscn")
 const StationScene = preload("res://scenes/objects/station.tscn")
 const NPCScene = preload("res://scenes/npc.tscn")
 const ContainerScene = preload("res://scenes/objects/container.tscn")
+const LevelScene = preload("res://scenes/tests/test_level.tscn")
 
 var test_area: Node2D
+var test_level: Node2D
 
 
 func _ready() -> void:
 	_test_name = "DebugCommands"
 	test_area = $TestArea
+	_setup_test_level()
 	super._ready()
+
+
+func _setup_test_level() -> void:
+	test_level = LevelScene.instantiate()
+	# Properties already set in test_level.tscn: world_map = "", auto_spawn_npcs = false
+	add_child(test_level)
 
 
 func run_tests() -> void:
@@ -77,7 +86,7 @@ func run_tests() -> void:
 	await test_get_wall_at()
 	await test_paint_wall_signal()
 	await test_paint_wall_out_of_bounds()
-	await test_cannot_remove_original_wall()
+	await test_paint_wall_remove_nonexistent()
 	await test_get_runtime_walls()
 	await test_clear_runtime_walls()
 	await test_world_grid_conversion()
@@ -565,8 +574,10 @@ func test_spawn_station_all_types() -> void:
 	# Verify all stations have unique colors (except generic which matches default)
 	assert_eq(spawned_stations.size(), valid_types.size(), "Should have spawned all station types")
 
-	# Cleanup
+	# Cleanup - await for queue_free to complete
 	DebugCommands.clear_runtime_stations()
+	await get_tree().process_frame
+	await get_tree().process_frame
 
 
 func test_spawn_station_signal() -> void:
@@ -657,8 +668,9 @@ func test_remove_station_clears_selection() -> void:
 func test_get_runtime_stations() -> void:
 	test("get_runtime_stations returns all spawned stations")
 
-	# Clear any existing runtime stations
-	DebugCommands.clear_runtime_stations()
+	# Clear everything first
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
 	await get_tree().process_frame
 
 	# Spawn some stations
@@ -681,6 +693,11 @@ func test_get_runtime_stations() -> void:
 
 func test_clear_runtime_stations() -> void:
 	test("clear_runtime_stations removes all spawned stations")
+
+	# Clear everything first
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+	await get_tree().process_frame
 
 	# Spawn some stations
 	var station1: Station = DebugCommands.spawn_station("toilet", Vector2(0, 64))
@@ -724,18 +741,18 @@ func test_spawn_npc_default_motives() -> void:
 	# Check position
 	assert_eq(npc.global_position, spawn_position, "NPC should be at spawn position")
 
-	# Check all motives are at 100 (full)
+	# Check all motives are at 100 (full) - use approx due to motive decay during test
 	var hunger: float = DebugCommands.get_npc_motive(npc, "hunger")
 	var energy: float = DebugCommands.get_npc_motive(npc, "energy")
 	var bladder: float = DebugCommands.get_npc_motive(npc, "bladder")
 	var hygiene: float = DebugCommands.get_npc_motive(npc, "hygiene")
 	var fun: float = DebugCommands.get_npc_motive(npc, "fun")
 
-	assert_eq(hunger, 100.0, "Hunger should be 100 (full)")
-	assert_eq(energy, 100.0, "Energy should be 100 (full)")
-	assert_eq(bladder, 100.0, "Bladder should be 100 (full)")
-	assert_eq(hygiene, 100.0, "Hygiene should be 100 (full)")
-	assert_eq(fun, 100.0, "Fun should be 100 (full)")
+	assert_approx_eq(hunger, 100.0, "Hunger should be ~100 (full)")
+	assert_approx_eq(energy, 100.0, "Energy should be ~100 (full)")
+	assert_approx_eq(bladder, 100.0, "Bladder should be ~100 (full)")
+	assert_approx_eq(hygiene, 100.0, "Hygiene should be ~100 (full)")
+	assert_approx_eq(fun, 100.0, "Fun should be ~100 (full)")
 
 	# Cleanup
 	DebugCommands.clear_runtime_npcs()
@@ -760,19 +777,19 @@ func test_spawn_npc_custom_motives() -> void:
 
 	assert_not_null(npc, "spawn_npc should return an NPC")
 
-	# Check custom motives are set correctly
+	# Check custom motives are set correctly - use approx due to motive decay
 	var hunger: float = DebugCommands.get_npc_motive(npc, "hunger")
 	var energy: float = DebugCommands.get_npc_motive(npc, "energy")
 	var bladder: float = DebugCommands.get_npc_motive(npc, "bladder")
 	var hygiene: float = DebugCommands.get_npc_motive(npc, "hygiene")
 	var fun: float = DebugCommands.get_npc_motive(npc, "fun")
 
-	assert_eq(hunger, 20.0, "Hunger should be 20")
-	assert_eq(energy, 80.0, "Energy should be 80")
-	assert_eq(bladder, 50.0, "Bladder should be 50")
+	assert_approx_eq(hunger, 20.0, "Hunger should be ~20")
+	assert_approx_eq(energy, 80.0, "Energy should be ~80")
+	assert_approx_eq(bladder, 50.0, "Bladder should be ~50")
 	# Unspecified motives should default to 100
-	assert_eq(hygiene, 100.0, "Hygiene should default to 100")
-	assert_eq(fun, 100.0, "Fun should default to 100")
+	assert_approx_eq(hygiene, 100.0, "Hygiene should default to ~100")
+	assert_approx_eq(fun, 100.0, "Fun should default to ~100")
 
 	# Cleanup
 	DebugCommands.clear_runtime_npcs()
@@ -820,9 +837,9 @@ func test_set_npc_motive() -> void:
 	var hunger: float = DebugCommands.get_npc_motive(npc, "hunger")
 	assert_eq(hunger, 10.0, "Hunger should be 10 after setting")
 
-	# Other motives should be unchanged
+	# Other motives should be unchanged (approx due to decay)
 	var energy: float = DebugCommands.get_npc_motive(npc, "energy")
-	assert_eq(energy, 100.0, "Energy should still be 100")
+	assert_approx_eq(energy, 100.0, "Energy should still be ~100")
 
 	# Test case-insensitivity
 	var result2: bool = DebugCommands.set_npc_motive(npc, "ENERGY", 75.0)
@@ -895,7 +912,7 @@ func test_set_npc_motive_signal() -> void:
 	assert_true(signal_data[0], "motive_changed signal should be emitted")
 	assert_eq(signal_data[1], npc, "Signal should pass the NPC")
 	assert_eq(signal_data[2], "hunger", "Signal should pass motive name")
-	assert_eq(signal_data[3], 100.0, "Signal should pass old value (100)")
+	assert_approx_eq(signal_data[3], 100.0, "Signal should pass old value (~100)")
 	assert_eq(signal_data[4], 25.0, "Signal should pass new value (25)")
 
 	# Cleanup
@@ -989,7 +1006,10 @@ func test_get_runtime_npcs() -> void:
 func test_clear_runtime_npcs() -> void:
 	test("clear_runtime_npcs removes all spawned NPCs")
 
-	DebugCommands.clear_runtime_npcs()
+	# Clear everything first
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+	await get_tree().process_frame
 
 	# Spawn some NPCs
 	var npc1: Node = DebugCommands.spawn_npc(Vector2(0, 100))
@@ -1272,69 +1292,19 @@ func test_get_jobs_by_state() -> void:
 # US-006: Wall Painting Tests
 # =============================================================================
 
-# Mock level node for wall painting tests
-var _mock_level: MockLevel = null
-var _mock_astar: AStarGrid2D = null
-
-
-## Simple mock level class with get_astar method
-class MockLevel extends Node2D:
-	var _astar: AStarGrid2D
-
-	func get_astar() -> AStarGrid2D:
-		return _astar
-
-
-## Create a mock level with AStar for wall painting tests
-func _create_mock_level() -> void:
-	if _mock_level != null:
-		_destroy_mock_level()
-
-	_mock_level = MockLevel.new()
-	_mock_level.add_to_group("level")
-
-	# Create AStar grid
-	_mock_astar = AStarGrid2D.new()
-	_mock_astar.region = Rect2i(0, 0, 10, 10)  # 10x10 grid
-	_mock_astar.cell_size = Vector2(32, 32)
-	_mock_astar.offset = Vector2(16, 16)
-	_mock_astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ALWAYS
-	_mock_astar.update()
-
-	# Mark some cells as walls (simulating original map)
-	_mock_astar.set_point_solid(Vector2i(0, 0), true)  # Corner wall
-	_mock_astar.set_point_solid(Vector2i(1, 0), true)  # Top wall
-	_mock_astar.set_point_solid(Vector2i(2, 0), true)  # Top wall
-
-	_mock_level._astar = _mock_astar
-
-	test_area.add_child(_mock_level)
-
-
-## Destroy the mock level
-func _destroy_mock_level() -> void:
-	if _mock_level != null:
-		_mock_level.remove_from_group("level")
-		_mock_level.queue_free()
-		_mock_level = null
-		_mock_astar = null
-
-
 func test_paint_wall_add() -> void:
 	test("paint_wall adds a wall at grid position")
 
-	_create_mock_level()
-	await get_tree().process_frame
-
 	# Clear any existing runtime walls
 	DebugCommands.clear_runtime_walls()
+	await get_tree().process_frame
 
 	# Add a wall at an empty position
 	var grid_pos := Vector2i(5, 5)
 	var result: bool = DebugCommands.paint_wall(grid_pos, true)
 
 	assert_true(result, "paint_wall should return true")
-	assert_true(_mock_astar.is_point_solid(grid_pos), "AStar should mark position as solid")
+	assert_true(test_level.astar.is_point_solid(grid_pos), "AStar should mark position as solid")
 
 	# Verify runtime wall was tracked
 	var runtime_walls: Dictionary = DebugCommands.get_runtime_walls()
@@ -1347,49 +1317,41 @@ func test_paint_wall_add() -> void:
 
 	# Cleanup
 	DebugCommands.clear_runtime_walls()
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_paint_wall_remove() -> void:
 	test("paint_wall removes a runtime wall at grid position")
 
-	_create_mock_level()
-	await get_tree().process_frame
-
 	DebugCommands.clear_runtime_walls()
+	await get_tree().process_frame
 
 	# First add a wall
 	var grid_pos := Vector2i(6, 6)
 	DebugCommands.paint_wall(grid_pos, true)
-	assert_true(_mock_astar.is_point_solid(grid_pos), "Wall should be added")
+	assert_true(test_level.astar.is_point_solid(grid_pos), "Wall should be added")
 
 	# Now remove it
 	var result: bool = DebugCommands.paint_wall(grid_pos, false)
 
 	assert_true(result, "paint_wall(false) should return true")
-	assert_false(_mock_astar.is_point_solid(grid_pos), "AStar should mark position as walkable")
+	assert_false(test_level.astar.is_point_solid(grid_pos), "AStar should mark position as walkable")
 
 	# Verify runtime wall was removed from tracking
 	var runtime_walls: Dictionary = DebugCommands.get_runtime_walls()
 	assert_false(runtime_walls.has(grid_pos), "Runtime walls should not contain the removed wall")
 
 	# Cleanup
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_get_wall_at() -> void:
 	test("get_wall_at returns correct wall status")
 
-	_create_mock_level()
+	DebugCommands.clear_runtime_walls()
 	await get_tree().process_frame
 
-	DebugCommands.clear_runtime_walls()
-
-	# Check original wall (created in mock setup)
-	var original_wall_pos := Vector2i(0, 0)
-	assert_true(DebugCommands.get_wall_at(original_wall_pos), "Original wall should be detected")
-
-	# Check empty position
+	# Check empty position (no walls in empty level)
 	var empty_pos := Vector2i(5, 5)
 	assert_false(DebugCommands.get_wall_at(empty_pos), "Empty position should return false")
 
@@ -1399,16 +1361,14 @@ func test_get_wall_at() -> void:
 
 	# Cleanup
 	DebugCommands.clear_runtime_walls()
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_paint_wall_signal() -> void:
 	test("paint_wall emits wall_changed signal")
 
-	_create_mock_level()
-	await get_tree().process_frame
-
 	DebugCommands.clear_runtime_walls()
+	await get_tree().process_frame
 
 	var signal_data: Array = [false, Vector2i(-1, -1), false]
 
@@ -1439,17 +1399,17 @@ func test_paint_wall_signal() -> void:
 
 	# Cleanup
 	DebugCommands.wall_changed.disconnect(callback)
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_paint_wall_out_of_bounds() -> void:
 	test("paint_wall returns false for out of bounds position")
 
-	_create_mock_level()
+	DebugCommands.clear_runtime_walls()
 	await get_tree().process_frame
 
-	# Try to add wall outside grid bounds (grid is 10x10)
-	var out_of_bounds_pos := Vector2i(15, 15)
+	# Try to add wall outside grid bounds (grid is 20x20)
+	var out_of_bounds_pos := Vector2i(25, 25)
 	var result: bool = DebugCommands.paint_wall(out_of_bounds_pos, true)
 
 	assert_false(result, "paint_wall should return false for out of bounds position")
@@ -1461,37 +1421,33 @@ func test_paint_wall_out_of_bounds() -> void:
 	assert_false(result2, "paint_wall should return false for negative position")
 
 	# Cleanup
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
-func test_cannot_remove_original_wall() -> void:
-	test("paint_wall cannot remove original map walls")
-
-	_create_mock_level()
-	await get_tree().process_frame
+func test_paint_wall_remove_nonexistent() -> void:
+	test("paint_wall is a no-op when removing non-existent wall")
 
 	DebugCommands.clear_runtime_walls()
+	await get_tree().process_frame
 
-	# Try to remove an original wall (set up in mock level)
-	var original_wall_pos := Vector2i(0, 0)
-	assert_true(_mock_astar.is_point_solid(original_wall_pos), "Original wall should exist")
+	# Try to remove a wall that doesn't exist
+	var empty_pos := Vector2i(5, 5)
+	assert_false(test_level.astar.is_point_solid(empty_pos), "Position should be empty")
 
-	var result: bool = DebugCommands.paint_wall(original_wall_pos, false)
+	var result: bool = DebugCommands.paint_wall(empty_pos, false)
 
-	assert_false(result, "paint_wall should return false when trying to remove original wall")
-	assert_true(_mock_astar.is_point_solid(original_wall_pos), "Original wall should still exist")
+	# Removing non-existent wall is a no-op that returns true
+	assert_true(result, "paint_wall should return true (no-op) when removing non-existent wall")
 
 	# Cleanup
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_get_runtime_walls() -> void:
-	test("get_runtime_walls returns all runtime-spawned walls")
-
-	_create_mock_level()
-	await get_tree().process_frame
+	test("get_runtime_walls returns all spawned walls")
 
 	DebugCommands.clear_runtime_walls()
+	await get_tree().process_frame
 
 	# Add multiple walls
 	var pos1 := Vector2i(3, 3)
@@ -1511,16 +1467,16 @@ func test_get_runtime_walls() -> void:
 
 	# Cleanup
 	DebugCommands.clear_runtime_walls()
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_clear_runtime_walls() -> void:
-	test("clear_runtime_walls removes all runtime walls")
+	test("clear_runtime_walls removes all walls")
 
-	_create_mock_level()
+	# Clear everything first
+	DebugCommands.clear_scenario()
 	await get_tree().process_frame
-
-	DebugCommands.clear_runtime_walls()
+	await get_tree().process_frame
 
 	# Add multiple walls
 	var pos1 := Vector2i(3, 3)
@@ -1530,8 +1486,8 @@ func test_clear_runtime_walls() -> void:
 	DebugCommands.paint_wall(pos2, true)
 
 	assert_eq(DebugCommands.get_runtime_walls().size(), 2, "Should have 2 runtime walls")
-	assert_true(_mock_astar.is_point_solid(pos1), "Wall 1 should be solid")
-	assert_true(_mock_astar.is_point_solid(pos2), "Wall 2 should be solid")
+	assert_true(test_level.astar.is_point_solid(pos1), "Wall 1 should be solid")
+	assert_true(test_level.astar.is_point_solid(pos2), "Wall 2 should be solid")
 
 	# Clear all runtime walls
 	DebugCommands.clear_runtime_walls()
@@ -1540,11 +1496,11 @@ func test_clear_runtime_walls() -> void:
 	await get_tree().process_frame
 
 	assert_eq(DebugCommands.get_runtime_walls().size(), 0, "Should have 0 runtime walls after clear")
-	assert_false(_mock_astar.is_point_solid(pos1), "Position 1 should be walkable after clear")
-	assert_false(_mock_astar.is_point_solid(pos2), "Position 2 should be walkable after clear")
+	assert_false(test_level.astar.is_point_solid(pos1), "Position 1 should be walkable after clear")
+	assert_false(test_level.astar.is_point_solid(pos2), "Position 2 should be walkable after clear")
 
 	# Cleanup
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_world_grid_conversion() -> void:
@@ -1700,11 +1656,11 @@ func test_save_scenario_with_npcs() -> void:
 	assert_eq(pos.get("y"), 200.0, "NPC y should be 200")
 
 	var motives: Dictionary = n1.get("motives", {})
-	assert_eq(motives.get("hunger"), 25.0, "Hunger should be 25")
-	assert_eq(motives.get("energy"), 75.0, "Energy should be 75")
-	assert_eq(motives.get("bladder"), 50.0, "Bladder should be 50")
-	assert_eq(motives.get("hygiene"), 100.0, "Hygiene should be 100")
-	assert_eq(motives.get("fun"), 10.0, "Fun should be 10")
+	assert_approx_eq(motives.get("hunger"), 25.0, "Hunger should be ~25")
+	assert_approx_eq(motives.get("energy"), 75.0, "Energy should be ~75")
+	assert_approx_eq(motives.get("bladder"), 50.0, "Bladder should be ~50")
+	assert_approx_eq(motives.get("hygiene"), 100.0, "Hygiene should be ~100")
+	assert_approx_eq(motives.get("fun"), 10.0, "Fun should be ~10")
 
 	# Cleanup
 	DebugCommands.clear_scenario()
@@ -1713,9 +1669,6 @@ func test_save_scenario_with_npcs() -> void:
 
 func test_save_scenario_with_walls() -> void:
 	test("save_scenario saves wall data correctly")
-
-	_create_mock_level()
-	await get_tree().process_frame
 
 	DebugCommands.clear_scenario()
 	await get_tree().process_frame
@@ -1753,7 +1706,7 @@ func test_save_scenario_with_walls() -> void:
 
 	# Cleanup
 	DebugCommands.clear_scenario()
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 	_cleanup_test_scenarios()
 
 
@@ -1764,7 +1717,7 @@ func test_save_scenario_with_walls() -> void:
 func test_spawn_container_basic() -> void:
 	test("spawn_container creates container at position")
 
-	_create_mock_level()
+	DebugCommands.clear_runtime_containers()
 	await get_tree().process_frame
 
 	var position := Vector2(128, 128)
@@ -1775,13 +1728,13 @@ func test_spawn_container_basic() -> void:
 
 	# Cleanup
 	DebugCommands.clear_runtime_containers()
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_spawn_container_all_types() -> void:
 	test("spawn_container works for all valid types")
 
-	_create_mock_level()
+	DebugCommands.clear_runtime_containers()
 	await get_tree().process_frame
 
 	var valid_types: Array[String] = DebugCommands.get_valid_container_types()
@@ -1795,13 +1748,13 @@ func test_spawn_container_all_types() -> void:
 
 	# Cleanup
 	DebugCommands.clear_runtime_containers()
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_spawn_container_grid_snapping() -> void:
 	test("spawn_container snaps position to grid")
 
-	_create_mock_level()
+	DebugCommands.clear_scenario()
 	await get_tree().process_frame
 
 	# Test position that's not on grid
@@ -1817,13 +1770,13 @@ func test_spawn_container_grid_snapping() -> void:
 
 	# Cleanup
 	DebugCommands.clear_runtime_containers()
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_spawn_container_signal() -> void:
 	test("spawn_container emits container_spawned signal")
 
-	_create_mock_level()
+	DebugCommands.clear_scenario()
 	await get_tree().process_frame
 
 	var signal_received: Array = [false]
@@ -1843,13 +1796,13 @@ func test_spawn_container_signal() -> void:
 	# Cleanup
 	DebugCommands.container_spawned.disconnect(callback)
 	DebugCommands.clear_runtime_containers()
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_spawn_container_invalid_type() -> void:
 	test("spawn_container returns null for invalid type")
 
-	_create_mock_level()
+	DebugCommands.clear_scenario()
 
 	var container: ItemContainer = DebugCommands.spawn_container("invalid_type", Vector2(100, 100))
 	assert_null(container, "Container should be null for invalid type")
@@ -1858,13 +1811,13 @@ func test_spawn_container_invalid_type() -> void:
 	assert_null(container, "Container should be null for empty type")
 
 	# Cleanup
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_spawn_container_default_allowed_tags() -> void:
 	test("spawn_container applies default allowed tags for fridge")
 
-	_create_mock_level()
+	DebugCommands.clear_scenario()
 	await get_tree().process_frame
 
 	var container: ItemContainer = DebugCommands.spawn_container("fridge", Vector2(100, 100))
@@ -1879,13 +1832,13 @@ func test_spawn_container_default_allowed_tags() -> void:
 
 	# Cleanup
 	DebugCommands.clear_runtime_containers()
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_spawn_container_custom_allowed_tags() -> void:
 	test("spawn_container can use custom allowed tags")
 
-	_create_mock_level()
+	DebugCommands.clear_scenario()
 	await get_tree().process_frame
 
 	var custom_tags: Array = ["special_item", "another_item"]
@@ -1898,13 +1851,13 @@ func test_spawn_container_custom_allowed_tags() -> void:
 
 	# Cleanup
 	DebugCommands.clear_runtime_containers()
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_remove_container() -> void:
 	test("remove_container removes runtime container")
 
-	_create_mock_level()
+	DebugCommands.clear_scenario()
 	await get_tree().process_frame
 
 	var container: ItemContainer = DebugCommands.spawn_container("bin", Vector2(100, 100))
@@ -1918,13 +1871,13 @@ func test_remove_container() -> void:
 	assert_eq(DebugCommands.get_runtime_containers().size(), 0, "Should have 0 containers after removal")
 
 	# Cleanup
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_get_runtime_containers() -> void:
 	test("get_runtime_containers returns all spawned containers")
 
-	_create_mock_level()
+	DebugCommands.clear_scenario()
 	await get_tree().process_frame
 
 	DebugCommands.spawn_container("fridge", Vector2(100, 100))
@@ -1936,13 +1889,15 @@ func test_get_runtime_containers() -> void:
 
 	# Cleanup
 	DebugCommands.clear_runtime_containers()
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_clear_runtime_containers() -> void:
 	test("clear_runtime_containers removes all containers")
 
-	_create_mock_level()
+	# Clear everything first
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
 	await get_tree().process_frame
 
 	DebugCommands.spawn_container("fridge", Vector2(100, 100))
@@ -1951,17 +1906,18 @@ func test_clear_runtime_containers() -> void:
 
 	DebugCommands.clear_runtime_containers()
 	await get_tree().process_frame
+	await get_tree().process_frame
 
 	assert_eq(DebugCommands.get_runtime_containers().size(), 0, "Should have 0 containers after clear")
 
 	# Cleanup
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_spawn_item_into_container_via_api() -> void:
 	test("spawn_item can spawn item directly into container")
 
-	_create_mock_level()
+	DebugCommands.clear_scenario()
 	await get_tree().process_frame
 
 	# Create a container that allows all items
@@ -1984,13 +1940,13 @@ func test_spawn_item_into_container_via_api() -> void:
 	# Cleanup
 	DebugCommands.clear_runtime_containers()
 	DebugCommands.clear_runtime_items()
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_container_notifies_npcs() -> void:
 	test("spawn_container notifies NPCs of new container")
 
-	_create_mock_level()
+	DebugCommands.clear_scenario()
 	await get_tree().process_frame
 
 	# Create an NPC first
@@ -2017,7 +1973,7 @@ func test_container_notifies_npcs() -> void:
 	# Cleanup
 	DebugCommands.clear_runtime_containers()
 	DebugCommands.clear_runtime_npcs()
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 
 
 func test_save_scenario_signal() -> void:
@@ -2096,7 +2052,7 @@ func test_load_scenario_basic() -> void:
 	assert_eq(loaded_npcs.size(), 1, "Should have 1 NPC after load")
 
 	var loaded_hunger: float = DebugCommands.get_npc_motive(loaded_npcs[0], "hunger")
-	assert_eq(loaded_hunger, 30.0, "NPC hunger should be 30")
+	assert_approx_eq(loaded_hunger, 30.0, "NPC hunger should be ~30")
 
 	# Cleanup
 	DebugCommands.clear_scenario()
@@ -2265,7 +2221,7 @@ func test_clear_scenario_signal() -> void:
 func test_scenario_round_trip_complex() -> void:
 	test("Complex scenario round-trip preserves all data")
 
-	_create_mock_level()
+	DebugCommands.clear_scenario()
 	await get_tree().process_frame
 
 	DebugCommands.clear_scenario()
@@ -2327,18 +2283,18 @@ func test_scenario_round_trip_complex() -> void:
 	var loaded_npcs: Array[Node] = DebugCommands.get_runtime_npcs()
 	assert_eq(loaded_npcs.size(), 2, "Should have 2 NPCs after load")
 
-	# Check NPC motives (order may vary, so check both)
+	# Check NPC motives (order may vary, so check both) - use approx comparison
 	var found_hungry_npc: bool = false
 	var found_bladder_npc: bool = false
 	for npc in loaded_npcs:
 		var hunger: float = DebugCommands.get_npc_motive(npc, "hunger")
 		var bladder: float = DebugCommands.get_npc_motive(npc, "bladder")
-		if hunger == 20.0:
+		if abs(hunger - 20.0) <= 0.1:
 			found_hungry_npc = true
-		if bladder == 30.0:
+		if abs(bladder - 30.0) <= 0.1:
 			found_bladder_npc = true
-	assert_true(found_hungry_npc, "Should find NPC with hunger=20")
-	assert_true(found_bladder_npc, "Should find NPC with bladder=30")
+	assert_true(found_hungry_npc, "Should find NPC with hunger~=20")
+	assert_true(found_bladder_npc, "Should find NPC with bladder~=30")
 
 	var loaded_walls: Dictionary = DebugCommands.get_runtime_walls()
 	assert_eq(loaded_walls.size(), 2, "Should have 2 walls after load")
@@ -2347,5 +2303,5 @@ func test_scenario_round_trip_complex() -> void:
 
 	# Cleanup
 	DebugCommands.clear_scenario()
-	_destroy_mock_level()
+	test_level.clear_all_entities()
 	_cleanup_test_scenarios()

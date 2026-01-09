@@ -78,6 +78,16 @@ func assert_eq(actual, expected, message: String = "") -> bool:
 		return false
 
 
+## Assert that two float values are approximately equal (within tolerance)
+func assert_approx_eq(actual: float, expected: float, message: String = "", tolerance: float = 0.1) -> bool:
+	if abs(actual - expected) <= tolerance:
+		_pass(message if message else "Expected ~%s, got %s" % [expected, actual])
+		return true
+	else:
+		_fail("Expected ~%s (±%s), got %s. %s" % [expected, tolerance, actual, message])
+		return false
+
+
 ## Assert that two values are not equal
 func assert_neq(actual, not_expected, message: String = "") -> bool:
 	if actual != not_expected:
