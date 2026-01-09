@@ -214,3 +214,33 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Round-trip tests are essential - verify data survives save/clear/load cycle
 
 ---
+
+## 2026-01-09 - US-008
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created debug_ui.tscn as CanvasLayer with layer=100 (renders above game)
+- Added SidePanel (PanelContainer) docked to right edge (280px width)
+- Added InspectorSection (VBoxContainer) with placeholder label in SidePanel
+- Added ToolsSection (VBoxContainer) below HSeparator in SidePanel
+- Added BottomBar (PanelContainer) docked to bottom (40px height, excludes SidePanel area)
+- UI is always visible - added DebugUI instance to main.tscn
+- UI uses mouse_filter=1 (PASS) on panels to not block game input in main viewport
+- Created debug_ui.gd script with:
+  - References to inspector_section, tools_section, bottom_bar, job_status_label
+  - Connection to DebugCommands signals (entity_selected, entity_deselected)
+  - Connection to JobBoard signals for real-time job status updates
+  - _update_job_status() displays job counts by state in bottom bar
+- All 12 test suites pass (1038 total assertions)
+
+**Files changed:**
+- scenes/debug_ui.tscn (new)
+- scripts/debug_ui.gd (new)
+- scenes/main.tscn (added DebugUI instance)
+
+**Learnings for future iterations:**
+- CanvasLayer with high layer number ensures UI renders above game elements
+- Use anchors_preset for docking UI to edges (11=right, 12=bottom)
+- mouse_filter=1 (PASS) allows clicks to pass through to game world where UI doesn't cover
+- PanelContainer provides default styling; MarginContainer adds padding inside
+- Connect to existing singleton signals (JobBoard, DebugCommands) for real-time updates
+
+---
