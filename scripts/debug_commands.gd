@@ -924,11 +924,14 @@ func _add_wall_at(grid_position: Vector2i, level: Node, astar: AStarGrid2D) -> b
 		# Wall already exists, no-op but return true
 		return true
 
-	# Check if there's already a runtime wall here (shouldn't happen but be safe)
-	if runtime_walls.has(grid_position):
-		return true
+	# Use level's add_wall if available (preferred - keeps walls dictionary in sync)
+	if level.has_method("add_wall"):
+		var success: bool = level.add_wall(grid_position)
+		if success:
+			wall_changed.emit(grid_position, true)
+		return success
 
-	# Create wall visual and collision
+	# Fallback: create wall directly (for levels without add_wall method)
 	var wall: StaticBody2D = _create_wall_node(grid_position)
 	level.add_child(wall)
 
@@ -951,9 +954,18 @@ func _remove_wall_at(grid_position: Vector2i, level: Node, astar: AStarGrid2D) -
 		# No wall exists, no-op but return true
 		return true
 
-	# Only remove runtime walls, not original map walls
+	# Use level's remove_wall if available (handles both original and runtime walls)
+	if level.has_method("remove_wall"):
+		var success: bool = level.remove_wall(grid_position)
+		if success:
+			# Also remove from runtime_walls if it was tracked there
+			runtime_walls.erase(grid_position)
+			wall_changed.emit(grid_position, false)
+		return success
+
+	# Fallback: only remove runtime walls (for levels without remove_wall method)
 	if not runtime_walls.has(grid_position):
-		push_error("DebugCommands.paint_wall: Cannot remove original map wall at " + str(grid_position))
+		push_error("DebugCommands.paint_wall: Cannot remove wall at " + str(grid_position) + " - level doesn't support wall removal")
 		return false
 
 	# Get and remove the wall node

@@ -53,6 +53,7 @@ var all_objects: Array[InteractableObject] = []
 var all_containers: Array[ItemContainer] = []  # For job system
 var all_stations: Array[Station] = []  # For job system
 var game_clock: GameClock
+var walls: Dictionary = {}  # grid_position (Vector2i) -> wall node (StaticBody2D)
 
 func _ready() -> void:
 	# Create game clock
@@ -202,6 +203,59 @@ func _create_wall(pos: Vector2) -> void:
 	wall.add_child(visual)
 
 	add_child(wall)
+
+	# Track wall by grid position for removal support
+	var grid_pos := Vector2i(int(pos.x / TILE_SIZE), int(pos.y / TILE_SIZE))
+	walls[grid_pos] = wall
+
+
+## Remove a wall at the given grid position
+## Returns true if wall was removed, false if no wall exists there
+func remove_wall(grid_pos: Vector2i) -> bool:
+	if not walls.has(grid_pos):
+		return false
+
+	var wall: StaticBody2D = walls[grid_pos]
+	if is_instance_valid(wall):
+		wall.queue_free()
+	walls.erase(grid_pos)
+
+	# Update AStar to mark position as walkable
+	if astar != null:
+		astar.set_point_solid(grid_pos, false)
+
+	# Add to walkable positions
+	var world_pos := Vector2(grid_pos.x * TILE_SIZE + TILE_SIZE / 2.0, grid_pos.y * TILE_SIZE + TILE_SIZE / 2.0)
+	if world_pos not in walkable_positions:
+		walkable_positions.append(world_pos)
+		wander_positions.append(world_pos)
+
+	return true
+
+
+## Add a wall at the given grid position
+## Returns true if wall was added, false if wall already exists there
+func add_wall(grid_pos: Vector2i) -> bool:
+	if walls.has(grid_pos):
+		return false
+
+	var world_pos := Vector2(grid_pos.x * TILE_SIZE + TILE_SIZE / 2.0, grid_pos.y * TILE_SIZE + TILE_SIZE / 2.0)
+	_create_wall(world_pos)
+
+	# Update AStar to mark position as solid
+	if astar != null:
+		astar.set_point_solid(grid_pos, true)
+
+	# Remove from walkable positions
+	walkable_positions.erase(world_pos)
+	wander_positions.erase(world_pos)
+
+	return true
+
+
+## Check if a wall exists at the given grid position
+func has_wall(grid_pos: Vector2i) -> bool:
+	return walls.has(grid_pos)
 
 func _setup_astar() -> void:
 	astar = AStarGrid2D.new()
