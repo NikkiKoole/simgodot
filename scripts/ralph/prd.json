@@ -36,7 +36,7 @@
         "Project runs without errors"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Required items: raw_food, toilet_paper, remote, cooked_meal, prepped_food"
     },
     {

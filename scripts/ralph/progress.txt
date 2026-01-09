@@ -58,5 +58,29 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Container class in Godot is reserved - project uses `ItemContainer` instead
 - NPC uses `held_items` (array) not `held_item` (single)
 - Signal tests with lambdas can be tricky - verify state directly when possible
+- GDScript closures cannot capture and modify local variables directly - use arrays to capture mutable state
+
+---
+
+## 2026-01-09 - US-002
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented spawn_item(tag, position_or_target) in DebugCommands
+- Handles 3 spawn target types:
+  - Vector2: spawns item ON_GROUND at world position
+  - ItemContainer: spawns item IN_CONTAINER
+  - Station: spawns item in first available input slot
+- Returns spawned ItemEntity reference, emits item_spawned signal
+- Added _get_level_node() helper to find Level node or fallback to scene root
+- Added 7 new tests covering all spawn scenarios (22 new assertions)
+- All 12 test suites pass (793 total assertions)
+
+**Files changed:**
+- scripts/debug_commands.gd (added spawn_item and helpers)
+- scripts/tests/test_debug_commands.gd (added spawn tests)
+
+**Learnings for future iterations:**
+- GDScript closures cannot capture and modify local primitives - use Array to capture mutable values in signal callbacks
+- Spawning entities requires adding to scene tree first, then reparenting occurs via container/station methods
+- Use "level" group to find Level node for spawning, with fallback to current_scene root
 
 ---
