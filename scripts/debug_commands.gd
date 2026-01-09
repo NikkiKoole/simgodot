@@ -8,12 +8,21 @@ extends Node
 signal entity_selected(entity: Node)
 signal entity_deselected()
 signal item_spawned(item: ItemEntity)
+signal station_spawned(station: Station)
+signal station_removed(station: Station)
 
-# Scene for spawning items
+# Scenes for spawning entities
 const ItemEntityScene = preload("res://scenes/objects/item_entity.tscn")
+const StationScene = preload("res://scenes/objects/station.tscn")
+
+# Grid size for snapping station positions (in pixels)
+const GRID_SIZE: int = 32
 
 # Currently selected entity
 var selected_entity: Node = null
+
+# Track runtime-spawned stations for cleanup
+var runtime_stations: Array[Station] = []
 
 
 func _ready() -> void:
@@ -378,3 +387,154 @@ func _get_level_node() -> Node:
 	# Fallback to current scene root
 	var root: Node = get_tree().current_scene
 	return root
+
+
+# =============================================================================
+# STATION SPAWNING (US-003)
+# =============================================================================
+
+## Valid station types that can be spawned
+const VALID_STATION_TYPES: Array[String] = [
+	"counter", "stove", "sink", "couch", "fridge", "toilet", "tv", "generic"
+]
+
+## Station type to color mapping for visual differentiation
+const STATION_COLORS: Dictionary = {
+	"counter": Color(0.6, 0.5, 0.4, 1.0),   # Brown
+	"stove": Color(0.7, 0.3, 0.2, 1.0),     # Red-brown
+	"sink": Color(0.3, 0.5, 0.7, 1.0),      # Blue
+	"couch": Color(0.5, 0.4, 0.6, 1.0),     # Purple
+	"fridge": Color(0.8, 0.8, 0.8, 1.0),    # Light gray
+	"toilet": Color(0.9, 0.9, 0.95, 1.0),   # White
+	"tv": Color(0.2, 0.2, 0.3, 1.0),        # Dark gray
+	"generic": Color(0.3, 0.5, 0.6, 1.0),   # Default teal
+}
+
+
+## Spawn a station of the given type at a position
+## type: One of VALID_STATION_TYPES (counter, stove, sink, couch, fridge, toilet, tv, generic)
+## position: World position (will be snapped to grid)
+## tags: Optional array of additional tags to apply to the station
+## Returns the spawned Station, or null if spawning failed
+func spawn_station(type: String, position: Vector2, tags: Array = []) -> Station:
+	# Validate station type
+	if type not in VALID_STATION_TYPES:
+		push_error("DebugCommands.spawn_station: Invalid station type '" + type + "'. Valid types: " + str(VALID_STATION_TYPES))
+		return null
+
+	# Create the station instance
+	var station: Station = StationScene.instantiate()
+
+	# Set station properties
+	station.station_tag = type
+	station.station_name = type.capitalize() + " (Debug)"
+
+	# Apply color based on type
+	if STATION_COLORS.has(type):
+		# Color will be applied after adding to scene tree (need access to Sprite2D child)
+		pass
+
+	# Snap position to grid
+	var snapped_position: Vector2 = snap_to_grid(position)
+
+	# Add to scene tree
+	var level: Node = _get_level_node()
+	if level == null:
+		push_error("DebugCommands.spawn_station: Could not find Level node")
+		station.queue_free()
+		return null
+
+	level.add_child(station)
+	station.global_position = snapped_position
+
+	# Apply color to the sprite
+	_apply_station_color(station, type)
+
+	# Track as runtime-spawned station
+	runtime_stations.append(station)
+
+	# Emit signal
+	station_spawned.emit(station)
+
+	return station
+
+
+## Remove a runtime-spawned station
+## Returns true if station was removed, false if it wasn't a runtime station
+func remove_station(station: Station) -> bool:
+	if station == null:
+		push_error("DebugCommands.remove_station: station is null")
+		return false
+
+	if not is_instance_valid(station):
+		push_error("DebugCommands.remove_station: station is not a valid instance")
+		return false
+
+	# Check if this is a runtime-spawned station
+	var index: int = runtime_stations.find(station)
+	if index == -1:
+		push_error("DebugCommands.remove_station: station was not spawned via DebugCommands")
+		return false
+
+	# Remove from tracking array
+	runtime_stations.remove_at(index)
+
+	# Clear selection if this station was selected
+	if selected_entity == station:
+		deselect_entity()
+
+	# Emit signal before freeing
+	station_removed.emit(station)
+
+	# Free the station
+	station.queue_free()
+
+	return true
+
+
+## Snap a position to the grid
+func snap_to_grid(position: Vector2, grid_size: int = GRID_SIZE) -> Vector2:
+	return Vector2(
+		round(position.x / grid_size) * grid_size,
+		round(position.y / grid_size) * grid_size
+	)
+
+
+## Apply the appropriate color to a station's sprite based on its type
+func _apply_station_color(station: Station, type: String) -> void:
+	if station.has_node("Sprite2D"):
+		var sprite: ColorRect = station.get_node("Sprite2D")
+		if sprite is ColorRect and STATION_COLORS.has(type):
+			sprite.color = STATION_COLORS[type]
+
+
+## Check if a station type is valid
+func is_valid_station_type(type: String) -> bool:
+	return type in VALID_STATION_TYPES
+
+
+## Get all valid station types
+func get_valid_station_types() -> Array[String]:
+	return VALID_STATION_TYPES.duplicate()
+
+
+## Get all runtime-spawned stations
+func get_runtime_stations() -> Array[Station]:
+	# Clean up any freed stations from the list
+	var valid_stations: Array[Station] = []
+	for station in runtime_stations:
+		if is_instance_valid(station):
+			valid_stations.append(station)
+	runtime_stations = valid_stations
+	return runtime_stations.duplicate()
+
+
+## Remove all runtime-spawned stations
+func clear_runtime_stations() -> void:
+	# Iterate in reverse to safely remove while iterating
+	for i in range(runtime_stations.size() - 1, -1, -1):
+		var station: Station = runtime_stations[i]
+		if is_instance_valid(station):
+			station_removed.emit(station)
+			station.queue_free()
+	runtime_stations.clear()
