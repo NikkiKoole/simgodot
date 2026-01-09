@@ -119,6 +119,7 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Test runner auto-quits in headless mode with exit code 0 (pass) or 1 (fail)
 - JobBoard.claim_job() accepts optional containers array to auto-reserve items
 - Job.release(), Job.complete(), Job.fail(), and Job.interrupt() all unreserve gathered items
+- **Motive-driven jobs use Sims-style "world task" architecture**: Jobs represent shared work (cooking a meal), not personal quests. Multiple hungry NPCs each post their own jobs. INTERRUPTED jobs can be claimed by other NPCs (food shouldn't waste). Single-threaded execution makes post→claim atomic.
 
 ---
 

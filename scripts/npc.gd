@@ -328,6 +328,13 @@ func _decide_next_action() -> void:
 ## Try to find and claim a job that fulfills critical needs
 ## If no suitable job exists, automatically posts one from available recipes
 ## Returns true if a job was started, false otherwise
+##
+## Design Note: This implements Sims-style "world task" architecture where:
+## - Jobs represent shared work (cooking a meal) not personal quests
+## - Multiple hungry NPCs each get their own jobs (2 hungry = 2 meals needed)
+## - INTERRUPTED jobs can be claimed by other NPCs (food shouldn't waste)
+## - Single-threaded execution ensures post→claim is atomic (no race conditions)
+## - NPCs only claim jobs matching their most urgent motive
 func _try_start_job_for_needs() -> bool:
 	# Get the most urgent motive
 	var urgent_motive := motives.get_most_urgent_motive()

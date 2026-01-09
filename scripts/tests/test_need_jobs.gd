@@ -24,6 +24,11 @@ func run_tests() -> void:
 	test_job_priority_based_on_urgency()
 	test_no_duplicate_jobs_posted()
 	test_best_executable_recipe_selected()
+	# Multi-NPC scenario tests
+	test_two_hungry_npcs_get_separate_jobs()
+	test_claimed_job_not_visible_to_other_npcs()
+	test_interrupted_job_claimable_by_other_hungry_npc()
+	test_non_hungry_npc_ignores_hunger_jobs()
 
 	_log_summary()
 
@@ -196,13 +201,44 @@ func test_has_recipe_for_motive() -> void:
 # ============================================================================
 
 ## Mock NPC class for testing job posting behavior
+## Simulates the real NPC's job-finding and posting logic
 class MockNPC extends Node2D:
 	var motives: Motive = null
 	var available_containers: Array[ItemContainer] = []
 	var available_stations: Array[Station] = []
+	var npc_name: String = "MockNPC"
 
-	func _init() -> void:
-		motives = Motive.new("MockNPC")
+	func _init(name_override: String = "MockNPC") -> void:
+		npc_name = name_override
+		motives = Motive.new(npc_name)
+
+	## Simulated version of NPC._try_start_job_for_needs
+	## Returns the job that was claimed (or null if none)
+	func try_start_job_for_needs(registry: Node, job_board: Node) -> Job:
+		var urgent_motive := motives.get_most_urgent_motive()
+		var motive_name := _motive_type_to_name(urgent_motive)
+		if motive_name.is_empty():
+			return null
+
+		# Check for existing available job first
+		var job: Job = job_board.get_highest_priority_job_for_motive(motive_name)
+
+		# If no job exists, post one
+		if job == null:
+			job = try_post_job_for_motive(motive_name, urgent_motive, registry, job_board)
+			if job == null:
+				return null
+
+		# Check if we can start it
+		var can_start = job_board.can_start_job(job, available_containers, available_stations)
+		if not can_start.can_start:
+			return null
+
+		# Claim it
+		if not job_board.claim_job(job, self, available_containers):
+			return null
+
+		return job
 
 	## Simulated version of NPC._try_post_job_for_motive
 	func try_post_job_for_motive(motive_name: String, motive_type: Motive.MotiveType, registry: Node, job_board: Node) -> Job:
@@ -255,8 +291,8 @@ class MockNPC extends Node2D:
 			Motive.MotiveType.FUN: return "fun"
 			_: return ""
 
-func _create_mock_npc() -> MockNPC:
-	var npc := MockNPC.new()
+func _create_mock_npc(npc_name: String = "MockNPC") -> MockNPC:
+	var npc := MockNPC.new(npc_name)
 	test_area.add_child(npc)
 	return npc
 
@@ -423,5 +459,183 @@ func test_best_executable_recipe_selected() -> void:
 	station.queue_free()
 	container.queue_free()
 	npc.queue_free()
+	_cleanup_job_board(board)
+	_cleanup_registry(registry)
+
+
+# ============================================================================
+# Multi-NPC scenario tests
+# These tests document and verify expected behavior when multiple NPCs
+# have competing needs. The architecture is Sims-style: jobs represent
+# shared world tasks, and whoever claims first gets to execute.
+# ============================================================================
+
+func test_two_hungry_npcs_get_separate_jobs() -> void:
+	test("Two hungry NPCs get separate jobs")
+	var registry = _create_recipe_registry()
+	var board = _create_job_board()
+
+	# Create two hungry NPCs
+	var npc_a := _create_mock_npc("NPC_A")
+	var npc_b := _create_mock_npc("NPC_B")
+
+	# Register hunger recipe
+	var hunger_recipe := _create_test_recipe("Eat Food", "hunger", 50.0)
+	registry.register_recipe(hunger_recipe)
+
+	# Create station (shared by both NPCs)
+	var station := _create_station("counter")
+	npc_a.available_stations.append(station)
+	npc_b.available_stations.append(station)
+
+	# Both NPCs are hungry
+	npc_a.motives.values[Motive.MotiveType.HUNGER] = -60.0
+	npc_b.motives.values[Motive.MotiveType.HUNGER] = -70.0
+
+	# NPC_A tries to fulfill need first (simulating physics process order)
+	var job_a: Job = npc_a.try_start_job_for_needs(registry, board)
+	assert_not_null(job_a, "NPC_A should get a job")
+	assert_eq(job_a.claimed_by, npc_a, "Job should be claimed by NPC_A")
+	assert_eq(job_a.state, Job.JobState.CLAIMED, "Job should be CLAIMED")
+
+	# NPC_B tries next - NPC_A's job is claimed, so NPC_B posts their own
+	var job_b: Job = npc_b.try_start_job_for_needs(registry, board)
+	assert_not_null(job_b, "NPC_B should also get a job")
+	assert_eq(job_b.claimed_by, npc_b, "Second job should be claimed by NPC_B")
+	assert_neq(job_a, job_b, "NPCs should have different jobs")
+
+	# Board should have 2 jobs (one for each hungry NPC)
+	assert_eq(board.get_job_count(), 2, "Board should have 2 jobs for 2 hungry NPCs")
+
+	station.queue_free()
+	npc_a.queue_free()
+	npc_b.queue_free()
+	_cleanup_job_board(board)
+	_cleanup_registry(registry)
+
+func test_claimed_job_not_visible_to_other_npcs() -> void:
+	test("Claimed job not visible to other NPCs")
+	var registry = _create_recipe_registry()
+	var board = _create_job_board()
+
+	var npc_a := _create_mock_npc("NPC_A")
+	var npc_b := _create_mock_npc("NPC_B")
+
+	var hunger_recipe := _create_test_recipe("Eat Food", "hunger", 50.0)
+	registry.register_recipe(hunger_recipe)
+
+	var station := _create_station("counter")
+	npc_a.available_stations.append(station)
+	npc_b.available_stations.append(station)
+
+	npc_a.motives.values[Motive.MotiveType.HUNGER] = -60.0
+
+	# NPC_A posts and claims a job
+	var job_a: Job = npc_a.try_start_job_for_needs(registry, board)
+	assert_not_null(job_a, "NPC_A should get a job")
+
+	# From NPC_B's perspective, there are no available hunger jobs
+	var available_for_b: Job = board.get_highest_priority_job_for_motive("hunger")
+	assert_null(available_for_b, "No hunger jobs should be available (NPC_A claimed it)")
+
+	# get_available_jobs should also be empty
+	var all_available: Array[Job] = board.get_available_jobs()
+	assert_array_size(all_available, 0, "No jobs should be available")
+
+	station.queue_free()
+	npc_a.queue_free()
+	npc_b.queue_free()
+	_cleanup_job_board(board)
+	_cleanup_registry(registry)
+
+func test_interrupted_job_claimable_by_other_hungry_npc() -> void:
+	test("Interrupted job claimable by other hungry NPC")
+	var registry = _create_recipe_registry()
+	var board = _create_job_board()
+
+	var npc_a := _create_mock_npc("NPC_A")
+	var npc_b := _create_mock_npc("NPC_B")
+
+	var hunger_recipe := _create_test_recipe("Eat Food", "hunger", 50.0)
+	registry.register_recipe(hunger_recipe)
+
+	var station := _create_station("counter")
+	npc_a.available_stations.append(station)
+	npc_b.available_stations.append(station)
+
+	npc_a.motives.values[Motive.MotiveType.HUNGER] = -60.0
+	npc_b.motives.values[Motive.MotiveType.HUNGER] = -70.0
+
+	# NPC_A claims a job
+	var job_a: Job = npc_a.try_start_job_for_needs(registry, board)
+	assert_not_null(job_a, "NPC_A should get a job")
+
+	# NPC_A starts working on it
+	job_a.start()
+	assert_eq(job_a.state, Job.JobState.IN_PROGRESS, "Job should be IN_PROGRESS")
+
+	# Something interrupts NPC_A
+	board.interrupt_job(job_a)
+	assert_eq(job_a.state, Job.JobState.INTERRUPTED, "Job should be INTERRUPTED")
+	assert_null(job_a.claimed_by, "Interrupted job should have no claimer")
+
+	# NPC_B should now be able to find and claim the interrupted job
+	# (This is Sims-style behavior: food being cooked shouldn't go to waste)
+	var job_b: Job = npc_b.try_start_job_for_needs(registry, board)
+	assert_not_null(job_b, "NPC_B should get a job")
+	assert_eq(job_b, job_a, "NPC_B should claim the interrupted job (not post new one)")
+	assert_eq(job_a.claimed_by, npc_b, "Interrupted job should now be claimed by NPC_B")
+
+	# Board should still have just 1 job (the resumed one)
+	assert_eq(board.get_job_count(), 1, "Should still have 1 job (resumed, not new)")
+
+	station.queue_free()
+	npc_a.queue_free()
+	npc_b.queue_free()
+	_cleanup_job_board(board)
+	_cleanup_registry(registry)
+
+func test_non_hungry_npc_ignores_hunger_jobs() -> void:
+	test("Non-hungry NPC ignores hunger jobs")
+	var registry = _create_recipe_registry()
+	var board = _create_job_board()
+
+	var hungry_npc := _create_mock_npc("Hungry_NPC")
+	var satisfied_npc := _create_mock_npc("Satisfied_NPC")
+
+	var hunger_recipe := _create_test_recipe("Eat Food", "hunger", 50.0)
+	registry.register_recipe(hunger_recipe)
+
+	var station := _create_station("counter")
+	hungry_npc.available_stations.append(station)
+	satisfied_npc.available_stations.append(station)
+
+	# One NPC is hungry, one is satisfied
+	hungry_npc.motives.values[Motive.MotiveType.HUNGER] = -60.0
+	satisfied_npc.motives.values[Motive.MotiveType.HUNGER] = 80.0  # Very satisfied
+	# Make fun the most urgent for satisfied NPC (but we have no fun recipe)
+	satisfied_npc.motives.values[Motive.MotiveType.FUN] = -40.0
+
+	# Hungry NPC posts a job
+	var job: Job = hungry_npc.try_start_job_for_needs(registry, board)
+	assert_not_null(job, "Hungry NPC should post job")
+	assert_eq(board.get_job_count(), 1, "Board should have 1 job")
+
+	# Hungry NPC releases the job (simulating they got interrupted or couldn't complete)
+	board.release_job(job)
+	assert_eq(job.state, Job.JobState.POSTED, "Job should be POSTED again")
+
+	# Satisfied NPC tries to fulfill needs - their most urgent is FUN, not hunger
+	# Since we have no fun recipes, they shouldn't claim the hunger job
+	var satisfied_job: Job = satisfied_npc.try_start_job_for_needs(registry, board)
+	assert_null(satisfied_job, "Satisfied NPC should not get job (no fun recipe)")
+
+	# The hunger job should still be unclaimed
+	assert_eq(job.state, Job.JobState.POSTED, "Hunger job should still be POSTED")
+	assert_null(job.claimed_by, "Hunger job should still be unclaimed")
+
+	station.queue_free()
+	hungry_npc.queue_free()
+	satisfied_npc.queue_free()
 	_cleanup_job_board(board)
 	_cleanup_registry(registry)
