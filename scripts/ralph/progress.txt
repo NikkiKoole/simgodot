@@ -438,3 +438,30 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - ColorRect with mouse_filter=IGNORE prevents preview from blocking click detection
 
 ---
+
+## 2026-01-09 - US-015
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created WallPaintTool UI panel with Add/Remove toggle buttons
+- Implemented click-to-paint functionality via DebugCommands.paint_wall()
+- Added drag-to-paint support for painting multiple cells in one motion
+- Visual preview shows wall placement before click (semi-transparent tile at cursor)
+- Preview color indicates mode: wall color for Add, red for Remove
+- Grid overlay displayed when tool is active (20x20 grid around cursor)
+- Grid follows cursor position and redraws each frame
+- Integrated into DebugUI tools section with HSeparator
+- Input handling coordinated with SpawnTools - checks is_paint_mode_active()
+- Right-click cancels paint mode
+- All 12 test suites pass (1038 total assertions)
+
+**Files changed:**
+- scripts/wall_paint_tool.gd (new)
+- scenes/wall_paint_tool.tscn (new)
+- scripts/debug_ui.gd (added WallPaintTool integration)
+
+**Learnings for future iterations:**
+- Follow SpawnTools pattern: PaintMode enum, preview node, _is_click_over_ui() check
+- Grid overlay uses draw.connect() and queue_redraw() each frame for dynamic positioning
+- Track is_dragging state to differentiate click vs drag painting
+- Expose is_paint_mode_active() method for DebugUI input coordination
+
+---
