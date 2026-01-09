@@ -19,6 +19,7 @@ TESTS=(
     "test_recipe_toilet"
     "test_recipe_tv"
     "test_interruption"
+    "test_debug_commands"
 )
 
 total_passed=0

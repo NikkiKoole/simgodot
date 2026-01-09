@@ -19,6 +19,7 @@ config/icon="res://icon.svg"
 
 JobBoard="*res://scripts/job_board.gd"
 RecipeRegistry="*res://scripts/recipe_registry.gd"
+DebugCommands="*res://scripts/debug_commands.gd"
 
 [display]
 

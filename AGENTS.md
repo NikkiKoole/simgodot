@@ -72,9 +72,11 @@ Note: Despite the name "Godot 3.app", this is actually Godot 4.5.1.
 ## Key Systems
 
 ### Motive System (`scripts/motive.gd`)
+- `Motive` class extends `RefCounted` (not Node) - use `var motives: Motive` not `var motives: Node`
 - Motives range from -100 to +100
 - Negative values = urgent need, positive = satisfied
 - Active motives: HUNGER, ENERGY, BLADDER, HYGIENE, FUN
+- Access values via `motives.get_value(Motive.MotiveType.HUNGER)` etc.
 
 ### Interactable Objects (`scripts/interactable_object.gd`)
 - Objects "advertise" what motives they fulfill
