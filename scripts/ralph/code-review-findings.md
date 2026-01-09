@@ -134,7 +134,7 @@ Choose consistent naming convention.
 
 - [ ] Issue #1: Performance polling
 - [ ] Issue #2: Slider feedback loop
-- [ ] Issue #3: Runtime items tracking (most important)
+- [x] Issue #3: Runtime items tracking (most important) - FIXED
 - [ ] Issue #4: Unused constants
 - [ ] Issue #5: Debug prints
 - [ ] Issue #6: Magic numbers

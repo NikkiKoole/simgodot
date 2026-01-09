@@ -321,6 +321,7 @@ func _spawn_item_on_ground(item: ItemEntity, world_position: Vector2) -> ItemEnt
 	item.global_position = world_position
 	item.set_location(ItemEntity.ItemLocation.ON_GROUND)
 
+	runtime_items.append(item)
 	item_spawned.emit(item)
 	return item
 
@@ -354,6 +355,7 @@ func _spawn_item_in_container(item: ItemEntity, container: ItemContainer) -> Ite
 		item.queue_free()
 		return null
 
+	runtime_items.append(item)
 	item_spawned.emit(item)
 	return item
 
@@ -383,6 +385,7 @@ func _spawn_item_at_station(item: ItemEntity, station: Station) -> ItemEntity:
 		item.queue_free()
 		return null
 
+	runtime_items.append(item)
 	item_spawned.emit(item)
 	return item
 
