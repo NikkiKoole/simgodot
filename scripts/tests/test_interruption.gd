@@ -28,6 +28,14 @@ func run_tests() -> void:
     test_second_agent_resumes_from_interrupted_step()
     test_second_agent_completes_cooking_from_interrupted_step()
     test_full_interruption_and_resume_sequence()
+    # Edge case tests from code review
+    test_multiple_interruptions_and_resumes()
+    test_interrupt_before_any_work_done()
+    test_job_interrupted_signal_emission()
+    test_cannot_interrupt_posted_job()
+    test_cannot_interrupt_claimed_job()
+    test_cannot_interrupt_completed_job()
+    test_cannot_interrupt_failed_job()
     _log_summary()
 
 
@@ -329,6 +337,298 @@ func test_second_agent_can_claim_interrupted_job() -> void:
     stove.queue_free()
     npc1.queue_free()
     npc2.queue_free()
+
+
+## Test 9: Multiple interruptions - Agent A -> interrupt -> Agent B -> interrupt -> Agent C completes
+func test_multiple_interruptions_and_resumes() -> void:
+    test("Job can be interrupted and resumed multiple times")
+
+    var counter := _create_station("counter", Vector2(100, 0))
+    var stove := _create_station("stove", Vector2(150, 0))
+
+    var container_data := _create_container_with_item("raw_food", ItemEntity.ItemState.RAW, Vector2(50, 0))
+    var container: ItemContainer = container_data["container"]
+    var raw_food: ItemEntity = container_data["item"]
+
+    var containers: Array[ItemContainer] = [container]
+    var stations: Array[Station] = [counter, stove]
+
+    # Agent A starts, gets interrupted at step 0 (before completing prep)
+    var npc_a := _create_npc(containers, stations)
+    var job := JobBoard.post_job(cook_simple_meal_recipe, 5)
+    JobBoard.claim_job(job, npc_a, containers)
+    job.start()
+
+    assert_eq(job.state, Job.JobState.IN_PROGRESS, "Job should be IN_PROGRESS")
+    assert_eq(job.current_step_index, 0, "Should be at step 0")
+
+    # Interrupt Agent A
+    var interrupted_a: bool = JobBoard.interrupt_job(job)
+    assert_true(interrupted_a, "First interrupt should succeed")
+    assert_eq(job.state, Job.JobState.INTERRUPTED, "Job should be INTERRUPTED")
+    assert_eq(job.current_step_index, 0, "Step index should still be 0")
+
+    # Agent B claims, does prep, gets interrupted at step 1
+    var npc_b := _create_npc(containers, stations)
+    JobBoard.claim_job(job, npc_b)
+    job.start()
+
+    # Agent B completes prep step
+    container.remove_item(raw_food)
+    counter.place_input_item(raw_food, 0)
+    npc_b.target_station = counter
+    npc_b._apply_step_transforms(cook_simple_meal_recipe.get_step(0))
+    job.advance_step()
+
+    assert_eq(job.current_step_index, 1, "Should be at step 1")
+    assert_eq(raw_food.item_tag, "prepped_food", "Item should be prepped_food")
+
+    # Interrupt Agent B
+    var interrupted_b: bool = JobBoard.interrupt_job(job)
+    assert_true(interrupted_b, "Second interrupt should succeed")
+    assert_eq(job.state, Job.JobState.INTERRUPTED, "Job should be INTERRUPTED again")
+    assert_eq(job.current_step_index, 1, "Step index should be preserved at 1")
+
+    # Agent C claims, resumes from step 1, completes
+    var npc_c := _create_npc(containers, stations)
+    JobBoard.claim_job(job, npc_c)
+    job.start()
+
+    assert_eq(job.current_step_index, 1, "Should resume at step 1")
+
+    # Agent C completes cook step
+    var prepped_food := counter.get_input_item(0)
+    counter.remove_input_item(0)
+    stove.place_input_item(prepped_food, 0)
+    npc_c.target_station = stove
+    npc_c._apply_step_transforms(cook_simple_meal_recipe.get_step(1))
+    job.advance_step()
+
+    assert_eq(prepped_food.item_tag, "cooked_meal", "Item should be cooked_meal")
+    assert_true(job.is_all_steps_complete(), "All steps should be complete")
+
+    job.complete()
+    assert_eq(job.state, Job.JobState.COMPLETED, "Job should be COMPLETED")
+
+    # Cleanup
+    JobBoard.clear_all_jobs()
+    container.queue_free()
+    counter.queue_free()
+    stove.queue_free()
+    npc_a.queue_free()
+    npc_b.queue_free()
+    npc_c.queue_free()
+
+
+## Test 10: Interrupt before any work done (at step 0, no items gathered)
+func test_interrupt_before_any_work_done() -> void:
+    test("Interrupt immediately after job.start() before any work")
+
+    var counter := _create_station("counter", Vector2(100, 0))
+    var stove := _create_station("stove", Vector2(150, 0))
+
+    var container_data := _create_container_with_item("raw_food", ItemEntity.ItemState.RAW, Vector2(50, 0))
+    var container: ItemContainer = container_data["container"]
+    var raw_food: ItemEntity = container_data["item"]
+
+    var containers: Array[ItemContainer] = [container]
+    var stations: Array[Station] = [counter, stove]
+
+    var npc := _create_npc(containers, stations)
+
+    # Create, claim, and start job but do NO work
+    var job := JobBoard.post_job(cook_simple_meal_recipe, 5)
+    JobBoard.claim_job(job, npc, containers)
+    job.start()
+
+    assert_eq(job.state, Job.JobState.IN_PROGRESS, "Job should be IN_PROGRESS")
+    assert_eq(job.current_step_index, 0, "Should be at step 0")
+    assert_eq(job.gathered_items.size(), 1, "Should have reserved 1 item")
+
+    # Interrupt immediately - no work done yet
+    var interrupted: bool = JobBoard.interrupt_job(job)
+    assert_true(interrupted, "Should be able to interrupt")
+    assert_eq(job.state, Job.JobState.INTERRUPTED, "Job should be INTERRUPTED")
+    assert_eq(job.current_step_index, 0, "Step index should still be 0")
+
+    # Item should still be in container (reservation released)
+    assert_false(raw_food.is_reserved(), "Item reservation should be released")
+
+    # Job should be claimable
+    assert_true(job.is_claimable(), "Interrupted job should be claimable")
+
+    # Second agent can claim and complete from step 0
+    var npc2 := _create_npc(containers, stations)
+    var claimed: bool = JobBoard.claim_job(job, npc2, containers)
+    assert_true(claimed, "Second agent should claim")
+    assert_eq(job.current_step_index, 0, "Should start from step 0")
+
+    # Cleanup
+    JobBoard.clear_all_jobs()
+    container.queue_free()
+    counter.queue_free()
+    stove.queue_free()
+    npc.queue_free()
+    npc2.queue_free()
+
+
+## Test 11: Verify job_interrupted signal is emitted
+func test_job_interrupted_signal_emission() -> void:
+    test("job_interrupted signal is emitted on interrupt")
+
+    var counter := _create_station("counter", Vector2(100, 0))
+    var stove := _create_station("stove", Vector2(150, 0))
+
+    var container_data := _create_container_with_item("raw_food", ItemEntity.ItemState.RAW, Vector2(50, 0))
+    var container: ItemContainer = container_data["container"]
+
+    var containers: Array[ItemContainer] = [container]
+    var stations: Array[Station] = [counter, stove]
+
+    var npc := _create_npc(containers, stations)
+
+    # Track signal emission using Dictionary (lambdas capture by value)
+    var state := {"signal_received": false, "signal_job": null}
+    JobBoard.job_interrupted.connect(func(j: Job):
+        state["signal_received"] = true
+        state["signal_job"] = j
+    )
+
+    # Create and start job
+    var job := JobBoard.post_job(cook_simple_meal_recipe, 5)
+    JobBoard.claim_job(job, npc, containers)
+    job.start()
+
+    assert_false(state["signal_received"], "Signal should not be received yet")
+
+    # Interrupt job
+    JobBoard.interrupt_job(job)
+
+    # Verify signal was emitted
+    assert_true(state["signal_received"], "job_interrupted signal should be received")
+    assert_eq(state["signal_job"], job, "Signal should pass the interrupted job")
+
+    # Cleanup
+    JobBoard.clear_all_jobs()
+    container.queue_free()
+    counter.queue_free()
+    stove.queue_free()
+    npc.queue_free()
+
+
+## Test 12: Cannot interrupt POSTED job
+func test_cannot_interrupt_posted_job() -> void:
+    test("Cannot interrupt job in POSTED state")
+
+    var job := JobBoard.post_job(cook_simple_meal_recipe, 5)
+    assert_eq(job.state, Job.JobState.POSTED, "Job should be POSTED")
+
+    var interrupted: bool = JobBoard.interrupt_job(job)
+    assert_false(interrupted, "Should not be able to interrupt POSTED job")
+    assert_eq(job.state, Job.JobState.POSTED, "Job should still be POSTED")
+
+    # Cleanup
+    JobBoard.clear_all_jobs()
+
+
+## Test 13: Cannot interrupt CLAIMED job (not yet started)
+func test_cannot_interrupt_claimed_job() -> void:
+    test("Cannot interrupt job in CLAIMED state")
+
+    var counter := _create_station("counter", Vector2(100, 0))
+    var stove := _create_station("stove", Vector2(150, 0))
+
+    var container_data := _create_container_with_item("raw_food", ItemEntity.ItemState.RAW, Vector2(50, 0))
+    var container: ItemContainer = container_data["container"]
+
+    var containers: Array[ItemContainer] = [container]
+    var stations: Array[Station] = [counter, stove]
+
+    var npc := _create_npc(containers, stations)
+
+    var job := JobBoard.post_job(cook_simple_meal_recipe, 5)
+    JobBoard.claim_job(job, npc, containers)
+
+    assert_eq(job.state, Job.JobState.CLAIMED, "Job should be CLAIMED")
+
+    var interrupted: bool = JobBoard.interrupt_job(job)
+    assert_false(interrupted, "Should not be able to interrupt CLAIMED job")
+    assert_eq(job.state, Job.JobState.CLAIMED, "Job should still be CLAIMED")
+
+    # Cleanup
+    JobBoard.clear_all_jobs()
+    container.queue_free()
+    counter.queue_free()
+    stove.queue_free()
+    npc.queue_free()
+
+
+## Test 14: Cannot interrupt COMPLETED job
+func test_cannot_interrupt_completed_job() -> void:
+    test("Cannot interrupt job in COMPLETED state")
+
+    var counter := _create_station("counter", Vector2(100, 0))
+    var stove := _create_station("stove", Vector2(150, 0))
+
+    var container_data := _create_container_with_item("raw_food", ItemEntity.ItemState.RAW, Vector2(50, 0))
+    var container: ItemContainer = container_data["container"]
+
+    var containers: Array[ItemContainer] = [container]
+    var stations: Array[Station] = [counter, stove]
+
+    var npc := _create_npc(containers, stations)
+
+    var job := JobBoard.post_job(cook_simple_meal_recipe, 5)
+    JobBoard.claim_job(job, npc, containers)
+    job.start()
+    job.complete()
+
+    assert_eq(job.state, Job.JobState.COMPLETED, "Job should be COMPLETED")
+
+    var interrupted: bool = JobBoard.interrupt_job(job)
+    assert_false(interrupted, "Should not be able to interrupt COMPLETED job")
+    assert_eq(job.state, Job.JobState.COMPLETED, "Job should still be COMPLETED")
+
+    # Cleanup
+    JobBoard.clear_all_jobs()
+    container.queue_free()
+    counter.queue_free()
+    stove.queue_free()
+    npc.queue_free()
+
+
+## Test 15: Cannot interrupt FAILED job
+func test_cannot_interrupt_failed_job() -> void:
+    test("Cannot interrupt job in FAILED state")
+
+    var counter := _create_station("counter", Vector2(100, 0))
+    var stove := _create_station("stove", Vector2(150, 0))
+
+    var container_data := _create_container_with_item("raw_food", ItemEntity.ItemState.RAW, Vector2(50, 0))
+    var container: ItemContainer = container_data["container"]
+
+    var containers: Array[ItemContainer] = [container]
+    var stations: Array[Station] = [counter, stove]
+
+    var npc := _create_npc(containers, stations)
+
+    var job := JobBoard.post_job(cook_simple_meal_recipe, 5)
+    JobBoard.claim_job(job, npc, containers)
+    job.start()
+    job.fail("Test failure")
+
+    assert_eq(job.state, Job.JobState.FAILED, "Job should be FAILED")
+
+    var interrupted: bool = JobBoard.interrupt_job(job)
+    assert_false(interrupted, "Should not be able to interrupt FAILED job")
+    assert_eq(job.state, Job.JobState.FAILED, "Job should still be FAILED")
+
+    # Cleanup
+    JobBoard.clear_all_jobs()
+    container.queue_free()
+    counter.queue_free()
+    stove.queue_free()
+    npc.queue_free()
 
 
 ## Test 6: Second agent resumes from interrupted step (not from beginning)
