@@ -371,3 +371,37 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Items track reserved_by reference for reservation status display
 
 ---
+
+## 2026-01-09 - US-013
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created JobPanel as replacement for simple BottomBar with expanded functionality
+- Status bar shows job counts by all 6 states: Posted, Claimed, In Progress, Interrupted, Completed, Failed
+- Click expand button (▲/▼) to toggle job list visibility
+- Expandable job list shows all jobs with columns:
+  - Recipe name
+  - State (color-coded: blue=posted, yellow=claimed, green=in progress, orange=interrupted, red=failed)
+  - Assigned NPC (clickable button to select NPC)
+  - Current step (e.g., "Step 2/5")
+  - Interrupt button (enabled only for IN_PROGRESS jobs)
+- Clicking NPC button calls DebugCommands.select_entity() to select that NPC
+- Interrupt button calls DebugCommands.interrupt_job() and refreshes list
+- Real-time updates via JobBoard signals: job_posted, job_claimed, job_completed, job_released, job_failed, job_interrupted
+- Removed old job status code from debug_ui.gd - JobPanel is now self-contained
+- Updated debug_ui.tscn to use JobPanel instance instead of BottomBar
+- All 12 test suites pass (1038 total assertions)
+- Godot --import validation passes
+
+**Files changed:**
+- scripts/job_panel.gd (new)
+- scenes/job_panel.tscn (new)
+- scripts/debug_ui.gd (removed old job status code, updated references)
+- scenes/debug_ui.tscn (replaced BottomBar with JobPanel instance)
+
+**Learnings for future iterations:**
+- Separate self-contained UI components into their own script/scene pairs for better organization
+- Use custom_minimum_size.y to control panel expansion/collapse height
+- Color-coded state labels improve visual scanning of job status
+- Button.bind() allows passing parameters to signal handlers for dynamic UI elements
+- Job list header row with labels improves readability of dynamic content
+
+---
