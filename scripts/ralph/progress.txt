@@ -465,3 +465,27 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Expose is_paint_mode_active() method for DebugUI input coordination
 
 ---
+
+## 2026-01-09 - US-016
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created PostJobTool UI panel in ToolsSection
+- Dropdown with 3 recipes: Cook Simple Meal, Use Toilet, Watch TV
+- Post button creates job via DebugCommands.post_job()
+- Status label shows confirmation message with recipe name (green) or error (red)
+- Posted job appears immediately in JobBoard status panel
+- Integrated into DebugUI: added PostJobToolScene preload and instantiation in _setup_tools_section()
+- All 12 test suites pass (1038 total assertions)
+- Godot --import validation passes
+
+**Files changed:**
+- scripts/post_job_tool.gd (new)
+- scenes/post_job_tool.tscn (new)
+- scripts/debug_ui.gd (added PostJobTool preload, variable, and instantiation)
+
+**Learnings for future iterations:**
+- Simple tool panels follow same structure: dropdown for selection, button for action, status label for feedback
+- Store recipe paths in const array alongside display names for easy mapping
+- Color-coded status messages (green=success, red=error) improve user feedback
+- JobPanel auto-updates via JobBoard signals, so no manual refresh needed after posting
+
+---
