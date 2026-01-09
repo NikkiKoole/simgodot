@@ -1,5 +1,6 @@
 ## Codebase Patterns
 - This is a Godot 4.5 project using GDScript
+- When iterating over an array and modifying it, make a duplicate first to avoid skipping items
 - Use `class_name` at top of scripts for global class registration (but NOT for autoload singletons)
 - Autoload singletons: Do NOT use `class_name` - causes "hides an autoload singleton" error
 - Lambda variable capture: GDScript lambdas capture by value, not reference. Use Dictionary for mutable state tracking in test signal handlers
@@ -226,4 +227,31 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Scene files need `uid://` for unique identification
   - Scripts are attached via `ExtResource` in scene files
   - Project runs from command line with `--headless --quit` flags for validation
+---
+
+## 2026-01-09 - US-010
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Added HAULING state to NPC state machine (State.HAULING = 4)
+- Added held_items array (Array[ItemEntity]) for tracking items agent is carrying
+- Added job system properties: current_job, available_containers, target_container, items_to_gather
+- Implemented start_hauling_for_job(job) to initialize hauling for a job's requirements
+- Implemented _start_gathering_next_item() to find and pathfind to containers with needed items
+- Implemented _follow_path_hauling() for movement in HAULING state (similar to WALKING but handles container arrival)
+- Implemented _on_arrived_at_container() to pick up items when reaching container
+- Implemented _pick_up_item() to remove from container, set IN_HAND, add to held_items
+- Implemented _cancel_hauling() to drop all items and release job on failure
+- Implemented _drop_item() to release item back to world
+- Implemented helper methods: get_held_items(), is_holding_items(), remove_held_item()
+- Added set_available_containers() for level to provide container references
+- Created test_agent_hauling.gd with 35 passing assertions
+- Files changed:
+  - scripts/npc.gd (added HAULING state, held_items, hauling methods)
+  - scripts/tests/test_agent_hauling.gd (new)
+  - scenes/tests/test_agent_hauling.tscn (new)
+- **Learnings for future iterations:**
+  - When iterating over an array and modifying it (like dropping items), make a duplicate first
+  - NPC hauling uses items_to_gather array of {tag, quantity} dictionaries to track requirements
+  - _pick_up_item handles container removal, item state change, and reparenting to agent
+  - After gathering all items, _on_all_items_gathered() is called (transitions to station in US-011)
+  - Use typed arrays (Array[ItemEntity]) for held_items to maintain type safety
 ---
