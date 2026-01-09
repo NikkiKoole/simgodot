@@ -71,6 +71,17 @@ func run_tests() -> void:
 	await test_get_all_jobs()
 	await test_get_jobs_by_state()
 
+	# US-006: Wall painting tests
+	await test_paint_wall_add()
+	await test_paint_wall_remove()
+	await test_get_wall_at()
+	await test_paint_wall_signal()
+	await test_paint_wall_out_of_bounds()
+	await test_cannot_remove_original_wall()
+	await test_get_runtime_walls()
+	await test_clear_runtime_walls()
+	await test_world_grid_conversion()
+
 	_log_summary()
 
 
@@ -1225,3 +1236,308 @@ func test_get_jobs_by_state() -> void:
 	# Cleanup
 	JobBoard.clear_all_jobs()
 	DebugCommands.clear_runtime_npcs()
+
+
+# =============================================================================
+# US-006: Wall Painting Tests
+# =============================================================================
+
+# Mock level node for wall painting tests
+var _mock_level: MockLevel = null
+var _mock_astar: AStarGrid2D = null
+
+
+## Simple mock level class with get_astar method
+class MockLevel extends Node2D:
+	var _astar: AStarGrid2D
+
+	func get_astar() -> AStarGrid2D:
+		return _astar
+
+
+## Create a mock level with AStar for wall painting tests
+func _create_mock_level() -> void:
+	if _mock_level != null:
+		_destroy_mock_level()
+
+	_mock_level = MockLevel.new()
+	_mock_level.add_to_group("level")
+
+	# Create AStar grid
+	_mock_astar = AStarGrid2D.new()
+	_mock_astar.region = Rect2i(0, 0, 10, 10)  # 10x10 grid
+	_mock_astar.cell_size = Vector2(32, 32)
+	_mock_astar.offset = Vector2(16, 16)
+	_mock_astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ALWAYS
+	_mock_astar.update()
+
+	# Mark some cells as walls (simulating original map)
+	_mock_astar.set_point_solid(Vector2i(0, 0), true)  # Corner wall
+	_mock_astar.set_point_solid(Vector2i(1, 0), true)  # Top wall
+	_mock_astar.set_point_solid(Vector2i(2, 0), true)  # Top wall
+
+	_mock_level._astar = _mock_astar
+
+	test_area.add_child(_mock_level)
+
+
+## Destroy the mock level
+func _destroy_mock_level() -> void:
+	if _mock_level != null:
+		_mock_level.remove_from_group("level")
+		_mock_level.queue_free()
+		_mock_level = null
+		_mock_astar = null
+
+
+func test_paint_wall_add() -> void:
+	test("paint_wall adds a wall at grid position")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	# Clear any existing runtime walls
+	DebugCommands.clear_runtime_walls()
+
+	# Add a wall at an empty position
+	var grid_pos := Vector2i(5, 5)
+	var result: bool = DebugCommands.paint_wall(grid_pos, true)
+
+	assert_true(result, "paint_wall should return true")
+	assert_true(_mock_astar.is_point_solid(grid_pos), "AStar should mark position as solid")
+
+	# Verify runtime wall was tracked
+	var runtime_walls: Dictionary = DebugCommands.get_runtime_walls()
+	assert_true(runtime_walls.has(grid_pos), "Runtime walls should contain the new wall")
+
+	# Verify wall node was created
+	var wall_node: StaticBody2D = runtime_walls[grid_pos]
+	assert_not_null(wall_node, "Wall node should exist")
+	assert_true(is_instance_valid(wall_node), "Wall node should be valid")
+
+	# Cleanup
+	DebugCommands.clear_runtime_walls()
+	_destroy_mock_level()
+
+
+func test_paint_wall_remove() -> void:
+	test("paint_wall removes a runtime wall at grid position")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	DebugCommands.clear_runtime_walls()
+
+	# First add a wall
+	var grid_pos := Vector2i(6, 6)
+	DebugCommands.paint_wall(grid_pos, true)
+	assert_true(_mock_astar.is_point_solid(grid_pos), "Wall should be added")
+
+	# Now remove it
+	var result: bool = DebugCommands.paint_wall(grid_pos, false)
+
+	assert_true(result, "paint_wall(false) should return true")
+	assert_false(_mock_astar.is_point_solid(grid_pos), "AStar should mark position as walkable")
+
+	# Verify runtime wall was removed from tracking
+	var runtime_walls: Dictionary = DebugCommands.get_runtime_walls()
+	assert_false(runtime_walls.has(grid_pos), "Runtime walls should not contain the removed wall")
+
+	# Cleanup
+	_destroy_mock_level()
+
+
+func test_get_wall_at() -> void:
+	test("get_wall_at returns correct wall status")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	DebugCommands.clear_runtime_walls()
+
+	# Check original wall (created in mock setup)
+	var original_wall_pos := Vector2i(0, 0)
+	assert_true(DebugCommands.get_wall_at(original_wall_pos), "Original wall should be detected")
+
+	# Check empty position
+	var empty_pos := Vector2i(5, 5)
+	assert_false(DebugCommands.get_wall_at(empty_pos), "Empty position should return false")
+
+	# Add a runtime wall and check
+	DebugCommands.paint_wall(empty_pos, true)
+	assert_true(DebugCommands.get_wall_at(empty_pos), "Runtime wall should be detected")
+
+	# Cleanup
+	DebugCommands.clear_runtime_walls()
+	_destroy_mock_level()
+
+
+func test_paint_wall_signal() -> void:
+	test("paint_wall emits wall_changed signal")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	DebugCommands.clear_runtime_walls()
+
+	var signal_data: Array = [false, Vector2i(-1, -1), false]
+
+	var callback := func(grid_pos: Vector2i, is_wall: bool) -> void:
+		signal_data[0] = true
+		signal_data[1] = grid_pos
+		signal_data[2] = is_wall
+
+	DebugCommands.wall_changed.connect(callback)
+
+	# Add a wall
+	var grid_pos := Vector2i(7, 7)
+	DebugCommands.paint_wall(grid_pos, true)
+
+	assert_true(signal_data[0], "wall_changed signal should be emitted")
+	assert_eq(signal_data[1], grid_pos, "Signal should pass correct grid position")
+	assert_true(signal_data[2], "Signal should indicate wall was added (is_wall=true)")
+
+	# Reset signal data
+	signal_data[0] = false
+
+	# Remove the wall
+	DebugCommands.paint_wall(grid_pos, false)
+
+	assert_true(signal_data[0], "wall_changed signal should be emitted on removal")
+	assert_eq(signal_data[1], grid_pos, "Signal should pass correct grid position")
+	assert_false(signal_data[2], "Signal should indicate wall was removed (is_wall=false)")
+
+	# Cleanup
+	DebugCommands.wall_changed.disconnect(callback)
+	_destroy_mock_level()
+
+
+func test_paint_wall_out_of_bounds() -> void:
+	test("paint_wall returns false for out of bounds position")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	# Try to add wall outside grid bounds (grid is 10x10)
+	var out_of_bounds_pos := Vector2i(15, 15)
+	var result: bool = DebugCommands.paint_wall(out_of_bounds_pos, true)
+
+	assert_false(result, "paint_wall should return false for out of bounds position")
+
+	# Negative position should also fail
+	var negative_pos := Vector2i(-1, -1)
+	var result2: bool = DebugCommands.paint_wall(negative_pos, true)
+
+	assert_false(result2, "paint_wall should return false for negative position")
+
+	# Cleanup
+	_destroy_mock_level()
+
+
+func test_cannot_remove_original_wall() -> void:
+	test("paint_wall cannot remove original map walls")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	DebugCommands.clear_runtime_walls()
+
+	# Try to remove an original wall (set up in mock level)
+	var original_wall_pos := Vector2i(0, 0)
+	assert_true(_mock_astar.is_point_solid(original_wall_pos), "Original wall should exist")
+
+	var result: bool = DebugCommands.paint_wall(original_wall_pos, false)
+
+	assert_false(result, "paint_wall should return false when trying to remove original wall")
+	assert_true(_mock_astar.is_point_solid(original_wall_pos), "Original wall should still exist")
+
+	# Cleanup
+	_destroy_mock_level()
+
+
+func test_get_runtime_walls() -> void:
+	test("get_runtime_walls returns all runtime-spawned walls")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	DebugCommands.clear_runtime_walls()
+
+	# Add multiple walls
+	var pos1 := Vector2i(3, 3)
+	var pos2 := Vector2i(4, 4)
+	var pos3 := Vector2i(5, 5)
+
+	DebugCommands.paint_wall(pos1, true)
+	DebugCommands.paint_wall(pos2, true)
+	DebugCommands.paint_wall(pos3, true)
+
+	var runtime_walls: Dictionary = DebugCommands.get_runtime_walls()
+
+	assert_eq(runtime_walls.size(), 3, "Should have 3 runtime walls")
+	assert_true(runtime_walls.has(pos1), "Should contain wall at pos1")
+	assert_true(runtime_walls.has(pos2), "Should contain wall at pos2")
+	assert_true(runtime_walls.has(pos3), "Should contain wall at pos3")
+
+	# Cleanup
+	DebugCommands.clear_runtime_walls()
+	_destroy_mock_level()
+
+
+func test_clear_runtime_walls() -> void:
+	test("clear_runtime_walls removes all runtime walls")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	DebugCommands.clear_runtime_walls()
+
+	# Add multiple walls
+	var pos1 := Vector2i(3, 3)
+	var pos2 := Vector2i(4, 4)
+
+	DebugCommands.paint_wall(pos1, true)
+	DebugCommands.paint_wall(pos2, true)
+
+	assert_eq(DebugCommands.get_runtime_walls().size(), 2, "Should have 2 runtime walls")
+	assert_true(_mock_astar.is_point_solid(pos1), "Wall 1 should be solid")
+	assert_true(_mock_astar.is_point_solid(pos2), "Wall 2 should be solid")
+
+	# Clear all runtime walls
+	DebugCommands.clear_runtime_walls()
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	assert_eq(DebugCommands.get_runtime_walls().size(), 0, "Should have 0 runtime walls after clear")
+	assert_false(_mock_astar.is_point_solid(pos1), "Position 1 should be walkable after clear")
+	assert_false(_mock_astar.is_point_solid(pos2), "Position 2 should be walkable after clear")
+
+	# Cleanup
+	_destroy_mock_level()
+
+
+func test_world_grid_conversion() -> void:
+	test("world_to_grid and grid_to_world convert correctly")
+
+	# Test world_to_grid
+	var world_pos := Vector2(48, 80)  # Should be grid (1, 2) with 32px tiles
+	var grid_pos: Vector2i = DebugCommands.world_to_grid(world_pos)
+	assert_eq(grid_pos, Vector2i(1, 2), "world_to_grid should convert (48, 80) to (1, 2)")
+
+	# Test with position at tile boundary
+	var boundary_pos := Vector2(64, 96)
+	var boundary_grid: Vector2i = DebugCommands.world_to_grid(boundary_pos)
+	assert_eq(boundary_grid, Vector2i(2, 3), "world_to_grid should convert (64, 96) to (2, 3)")
+
+	# Test grid_to_world (returns center of tile)
+	var grid_input := Vector2i(3, 4)
+	var world_output: Vector2 = DebugCommands.grid_to_world(grid_input)
+	# Center of tile at grid (3, 4) with 32px tiles = (3*32 + 16, 4*32 + 16) = (112, 144)
+	assert_eq(world_output, Vector2(112, 144), "grid_to_world should convert (3, 4) to (112, 144)")
+
+	# Test round-trip
+	var original_grid := Vector2i(5, 7)
+	var world_converted: Vector2 = DebugCommands.grid_to_world(original_grid)
+	var back_to_grid: Vector2i = DebugCommands.world_to_grid(world_converted)
+	assert_eq(back_to_grid, original_grid, "Round-trip conversion should preserve grid position")

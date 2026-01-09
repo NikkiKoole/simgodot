@@ -12,6 +12,7 @@ signal station_spawned(station: Station)
 signal station_removed(station: Station)
 signal npc_spawned(npc: Node)
 signal motive_changed(npc: Node, motive_name: String, old_value: float, new_value: float)
+signal wall_changed(grid_position: Vector2i, is_wall: bool)
 
 # Scenes for spawning entities
 const ItemEntityScene = preload("res://scenes/objects/item_entity.tscn")
@@ -29,6 +30,9 @@ var runtime_stations: Array[Station] = []
 
 # Track runtime-spawned NPCs for cleanup
 var runtime_npcs: Array[Node] = []
+
+# Track runtime-spawned walls for cleanup (grid_position -> wall_node)
+var runtime_walls: Dictionary = {}
 
 
 func _ready() -> void:
@@ -801,3 +805,211 @@ func get_all_jobs() -> Array[Job]:
 ## Returns array of jobs matching the specified state
 func get_jobs_by_state(state: Job.JobState) -> Array[Job]:
 	return JobBoard.get_jobs_by_state(state)
+
+
+# =============================================================================
+# WALL PAINTING (US-006)
+# =============================================================================
+
+## Wall visual properties
+const WALL_COLOR := Color(0.35, 0.35, 0.45)
+const WALL_TILE_SIZE := 32
+
+
+## Paint or remove a wall at a grid position
+## grid_position: The grid coordinates (not world position) where the wall should be placed
+## add_wall: If true, adds a wall; if false, removes a wall
+## Returns true if the operation succeeded, false otherwise
+func paint_wall(grid_position: Vector2i, add_wall: bool) -> bool:
+	var level: Node = _get_level_node()
+	if level == null:
+		push_error("DebugCommands.paint_wall: Could not find Level node")
+		return false
+
+	# Check if level has AStar
+	if not level.has_method("get_astar"):
+		push_error("DebugCommands.paint_wall: Level does not have get_astar method")
+		return false
+
+	var astar: AStarGrid2D = level.get_astar()
+	if astar == null:
+		push_error("DebugCommands.paint_wall: Level AStar is null")
+		return false
+
+	# Check if position is within map bounds
+	if not _is_grid_position_valid(grid_position, astar):
+		push_error("DebugCommands.paint_wall: Grid position " + str(grid_position) + " is out of bounds")
+		return false
+
+	if add_wall:
+		return _add_wall_at(grid_position, level, astar)
+	else:
+		return _remove_wall_at(grid_position, level, astar)
+
+
+## Check if a wall exists at a grid position
+## grid_position: The grid coordinates to check
+## Returns true if a wall exists at that position, false otherwise
+func get_wall_at(grid_position: Vector2i) -> bool:
+	var level: Node = _get_level_node()
+	if level == null:
+		return false
+
+	if not level.has_method("get_astar"):
+		return false
+
+	var astar: AStarGrid2D = level.get_astar()
+	if astar == null:
+		return false
+
+	# Check if position is within bounds
+	if not _is_grid_position_valid(grid_position, astar):
+		return false
+
+	# AStar reports solid points as walls
+	return astar.is_point_solid(grid_position)
+
+
+## Check if a grid position is within the AStar region bounds
+func _is_grid_position_valid(grid_position: Vector2i, astar: AStarGrid2D) -> bool:
+	var region: Rect2i = astar.region
+	return grid_position.x >= region.position.x and grid_position.x < region.position.x + region.size.x \
+		and grid_position.y >= region.position.y and grid_position.y < region.position.y + region.size.y
+
+
+## Add a wall at a grid position
+func _add_wall_at(grid_position: Vector2i, level: Node, astar: AStarGrid2D) -> bool:
+	# Check if wall already exists
+	if astar.is_point_solid(grid_position):
+		# Wall already exists, no-op but return true
+		return true
+
+	# Check if there's already a runtime wall here (shouldn't happen but be safe)
+	if runtime_walls.has(grid_position):
+		return true
+
+	# Create wall visual and collision
+	var wall: StaticBody2D = _create_wall_node(grid_position)
+	level.add_child(wall)
+
+	# Track the runtime wall
+	runtime_walls[grid_position] = wall
+
+	# Update AStar to mark this point as solid
+	astar.set_point_solid(grid_position, true)
+
+	# Emit signal
+	wall_changed.emit(grid_position, true)
+
+	return true
+
+
+## Remove a wall at a grid position
+func _remove_wall_at(grid_position: Vector2i, level: Node, astar: AStarGrid2D) -> bool:
+	# Check if wall exists
+	if not astar.is_point_solid(grid_position):
+		# No wall exists, no-op but return true
+		return true
+
+	# Only remove runtime walls, not original map walls
+	if not runtime_walls.has(grid_position):
+		push_error("DebugCommands.paint_wall: Cannot remove original map wall at " + str(grid_position))
+		return false
+
+	# Get and remove the wall node
+	var wall: StaticBody2D = runtime_walls[grid_position]
+	if is_instance_valid(wall):
+		wall.queue_free()
+
+	runtime_walls.erase(grid_position)
+
+	# Update AStar to mark this point as walkable
+	astar.set_point_solid(grid_position, false)
+
+	# Emit signal
+	wall_changed.emit(grid_position, false)
+
+	return true
+
+
+## Create a wall node at a grid position
+func _create_wall_node(grid_position: Vector2i) -> StaticBody2D:
+	var wall := StaticBody2D.new()
+
+	# Calculate world position (center of tile)
+	var world_pos := Vector2(
+		grid_position.x * WALL_TILE_SIZE + WALL_TILE_SIZE / 2.0,
+		grid_position.y * WALL_TILE_SIZE + WALL_TILE_SIZE / 2.0
+	)
+	wall.position = world_pos
+	wall.collision_layer = 1
+	wall.collision_mask = 0
+
+	# Add collision shape
+	var collision := CollisionShape2D.new()
+	var shape := RectangleShape2D.new()
+	shape.size = Vector2(WALL_TILE_SIZE, WALL_TILE_SIZE)
+	collision.shape = shape
+	wall.add_child(collision)
+
+	# Add visual
+	var visual := ColorRect.new()
+	visual.color = WALL_COLOR
+	visual.size = Vector2(WALL_TILE_SIZE, WALL_TILE_SIZE)
+	visual.position = Vector2(-WALL_TILE_SIZE / 2.0, -WALL_TILE_SIZE / 2.0)
+	wall.add_child(visual)
+
+	return wall
+
+
+## Convert a world position to grid position
+func world_to_grid(world_position: Vector2) -> Vector2i:
+	return Vector2i(
+		int(world_position.x / WALL_TILE_SIZE),
+		int(world_position.y / WALL_TILE_SIZE)
+	)
+
+
+## Convert a grid position to world position (center of tile)
+func grid_to_world(grid_position: Vector2i) -> Vector2:
+	return Vector2(
+		grid_position.x * WALL_TILE_SIZE + WALL_TILE_SIZE / 2.0,
+		grid_position.y * WALL_TILE_SIZE + WALL_TILE_SIZE / 2.0
+	)
+
+
+## Get all runtime-spawned walls
+## Returns dictionary of {grid_position: wall_node}
+func get_runtime_walls() -> Dictionary:
+	# Clean up any freed walls from the dictionary
+	var valid_walls: Dictionary = {}
+	for grid_pos in runtime_walls:
+		var wall: StaticBody2D = runtime_walls[grid_pos]
+		if is_instance_valid(wall):
+			valid_walls[grid_pos] = wall
+	runtime_walls = valid_walls
+	return runtime_walls.duplicate()
+
+
+## Remove all runtime-spawned walls
+func clear_runtime_walls() -> void:
+	var level: Node = _get_level_node()
+	var astar: AStarGrid2D = null
+
+	if level != null and level.has_method("get_astar"):
+		astar = level.get_astar()
+
+	# Remove all runtime walls
+	for grid_pos in runtime_walls:
+		var wall: StaticBody2D = runtime_walls[grid_pos]
+		if is_instance_valid(wall):
+			wall.queue_free()
+
+		# Update AStar if available
+		if astar != null:
+			astar.set_point_solid(grid_pos, false)
+
+		# Emit signal for each removed wall
+		wall_changed.emit(grid_pos, false)
+
+	runtime_walls.clear()
