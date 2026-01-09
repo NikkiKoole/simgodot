@@ -15,7 +15,7 @@ const TILE_SIZE := 32
 @export var stuck_threshold: float = 1.0  # Seconds without progress before wiggling
 @export var wiggle_strength: float = 40.0  # Random force when stuck
 
-enum State { IDLE, WALKING, WAITING, USING_OBJECT, HAULING }
+enum State { IDLE, WALKING, WAITING, USING_OBJECT, HAULING, WORKING }
 var current_state: State = State.IDLE
 var wait_timer: float = 0.0
 var is_initialized: bool = false
@@ -62,6 +62,12 @@ var held_items: Array[ItemEntity] = []
 var available_containers: Array[ItemContainer] = []
 var target_container: ItemContainer = null
 var items_to_gather: Array[Dictionary] = []  # [{tag: String, quantity: int}]
+
+# Job system / Working
+var available_stations: Array[Station] = []
+var target_station: Station = null
+var work_timer: float = 0.0
+var current_animation: String = ""  # Animation being played for current step
 
 func _ready() -> void:
 	npc_id = npc_counter
@@ -157,8 +163,12 @@ func _physics_process(delta: float) -> void:
 
 		State.USING_OBJECT:
 			_use_object(scaled_delta, game_delta)
+
 		State.HAULING:
 			_follow_path_hauling(speed_mult)
+
+		State.WORKING:
+			_do_work(scaled_delta, game_delta)
 
 func _follow_path(speed_mult: float) -> void:
 	if path_index >= current_path.size():
@@ -795,10 +805,14 @@ func _pick_up_item(item: ItemEntity) -> void:
 
 ## Called when all required items have been gathered
 func _on_all_items_gathered() -> void:
-	# Transition to moving to station (will be implemented in US-011)
-	# For now, just go to IDLE state
-	current_state = State.IDLE
 	target_container = null
+
+	# Start working on the job - find station for first step
+	if current_job != null and current_job.recipe != null:
+		current_job.start()
+		_start_next_work_step()
+	else:
+		current_state = State.IDLE
 
 ## Cancel hauling and release resources
 func _cancel_hauling() -> void:
@@ -938,3 +952,443 @@ func _update_collision_radius(new_radius: float) -> void:
 	if collision_shape and collision_shape.shape is CircleShape2D:
 		collision_shape.shape.radius = current_collision_radius
 	queue_redraw()
+
+# ============================================================================
+# WORKING STATE - Executing recipe steps at stations
+# ============================================================================
+
+## Called by level to set available stations
+func set_available_stations(stations: Array[Station]) -> void:
+	available_stations = stations.duplicate()
+
+## Start the next work step in the current job's recipe
+func _start_next_work_step() -> void:
+	if current_job == null or current_job.recipe == null:
+		_finish_job()
+		return
+
+	var step := current_job.get_current_step()
+	if step == null:
+		# No more steps, job is complete
+		_finish_job()
+		return
+
+	# Find station for this step
+	var station := _find_station_for_step(step)
+	if station == null:
+		# No available station found, fail the job
+		_cancel_working("No station available for step: " + step.station_tag)
+		return
+
+	# Reserve the station
+	if not station.reserve(self):
+		_cancel_working("Could not reserve station: " + station.station_tag)
+		return
+
+	target_station = station
+	current_job.target_station = station
+
+	# Pathfind to station's agent footprint
+	_pathfind_to_station(station)
+
+## Find an available station matching the step's station_tag
+func _find_station_for_step(step: RecipeStep) -> Station:
+	if not step.requires_station():
+		return null
+
+	for station in available_stations:
+		if station.station_tag == step.station_tag and station.is_available():
+			return station
+
+	# Also check if we already reserved one that matches
+	for station in available_stations:
+		if station.station_tag == step.station_tag and station.is_reserved_by(self):
+			return station
+
+	return null
+
+## Pathfind to a station's agent footprint position
+func _pathfind_to_station(station: Station) -> void:
+	if astar == null:
+		_cancel_working("No pathfinding available")
+		return
+
+	var target_pos := station.get_agent_position()
+
+	# Convert world positions to grid coordinates
+	var from_grid := Vector2i(
+		int(global_position.x / TILE_SIZE),
+		int(global_position.y / TILE_SIZE)
+	)
+	var to_grid := Vector2i(
+		int(target_pos.x / TILE_SIZE),
+		int(target_pos.y / TILE_SIZE)
+	)
+
+	# Get path from AStar
+	current_path = astar.get_point_path(from_grid, to_grid)
+
+	# Pre-smooth the path
+	if path_smoothing_enabled and current_path.size() > 2:
+		current_path = _smooth_path(current_path)
+
+	path_index = 0
+
+	if current_path.size() > 0:
+		current_state = State.WORKING
+	else:
+		# Already at station or no path needed
+		_on_arrived_at_station()
+
+## Follow path while in WORKING state (moving to station)
+func _follow_path_working(speed_mult: float) -> void:
+	if path_index >= current_path.size():
+		# Reached station
+		_on_arrived_at_station()
+		return
+
+	# Use the same path following logic as other states
+	var target_pos := current_path[path_index]
+	var distance := global_position.distance_to(target_pos)
+	var delta := get_physics_process_delta_time()
+
+	var move_distance := speed * speed_mult * delta
+
+	if distance <= move_distance + 2.0:
+		global_position = target_pos
+		path_index += 1
+		stuck_timer = 0.0
+		return
+
+	var desired_direction := global_position.direction_to(target_pos)
+	var avoidance := _calculate_avoidance()
+
+	if stuck_timer > stuck_threshold:
+		avoidance = Vector2.ZERO
+
+	# Check stuck progress
+	var progress_toward_goal := last_position.distance_to(target_pos) - global_position.distance_to(target_pos)
+	var expected_progress := speed * speed_mult * delta * 0.3
+
+	if progress_toward_goal < expected_progress:
+		stuck_timer += delta * speed_mult
+	else:
+		if progress_toward_goal > expected_progress * 2:
+			stuck_timer = 0.0
+			wiggle_direction = Vector2.ZERO
+		else:
+			stuck_timer = maxf(0.0, stuck_timer - delta * speed_mult * 0.5)
+
+	last_position = global_position
+
+	# Dynamic collision shrinking
+	if stuck_timer > stuck_threshold:
+		if current_collision_radius <= MIN_COLLISION_RADIUS + 0.1:
+			stuck_timer = 0.0
+			wiggle_direction = Vector2.ZERO
+			_cancel_working("Got stuck while moving to station")
+			return
+		_update_collision_radius(current_collision_radius - SHRINK_RATE * delta * speed_mult)
+	elif current_collision_radius < DEFAULT_COLLISION_RADIUS:
+		_update_collision_radius(current_collision_radius + GROW_RATE * delta * speed_mult)
+
+	var wiggle := Vector2.ZERO
+	if stuck_timer > stuck_threshold:
+		if wiggle_direction == Vector2.ZERO:
+			wiggle_direction = Vector2(randf_range(-1, 1), randf_range(-1, 1)).normalized()
+		wiggle = wiggle_direction * wiggle_strength
+
+	var final_velocity := desired_direction * speed + avoidance * avoidance_strength + wiggle
+	final_velocity *= speed_mult
+
+	var max_speed := speed * speed_mult * 1.3
+	if final_velocity.length() > max_speed:
+		final_velocity = final_velocity.normalized() * max_speed
+
+	velocity = final_velocity
+
+	var max_step_distance := current_collision_radius * 0.25
+	var frame_distance := velocity.length() * delta
+
+	if frame_distance > max_step_distance and velocity.length() > 0:
+		var substeps := ceili(frame_distance / max_step_distance)
+		var substep_velocity := velocity / substeps
+		for i in substeps:
+			velocity = substep_velocity
+			move_and_slide()
+	else:
+		move_and_slide()
+
+## Called when agent arrives at the target station
+func _on_arrived_at_station() -> void:
+	if target_station == null or current_job == null:
+		_cancel_working("No station or job on arrival")
+		return
+
+	velocity = Vector2.ZERO
+
+	# Place held items in station input slots if needed
+	_place_items_in_station()
+
+	# Start the work timer for current step
+	_start_step_work()
+
+## Place held items into station input slots
+func _place_items_in_station() -> void:
+	if target_station == null:
+		return
+
+	# Place each held item in an available input slot
+	var items_to_place := held_items.duplicate()
+	for item in items_to_place:
+		if not is_instance_valid(item):
+			continue
+
+		var slot_index := target_station.find_empty_input_slot()
+		if slot_index >= 0:
+			# Remove from held items
+			remove_held_item(item)
+			# Remove from our child if it's parented to us
+			if item.get_parent() == self:
+				remove_child(item)
+			# Place in station slot
+			target_station.place_input_item(item, slot_index)
+
+## Start working on the current step
+func _start_step_work() -> void:
+	if current_job == null:
+		_cancel_working("No job for step work")
+		return
+
+	var step := current_job.get_current_step()
+	if step == null:
+		_finish_job()
+		return
+
+	# Set up timer and animation
+	work_timer = step.duration
+	current_animation = step.animation
+
+	# Play animation if specified (agent would need AnimationPlayer)
+	if not current_animation.is_empty():
+		_play_animation(current_animation)
+
+## Do work on the current step (called each frame in WORKING state)
+func _do_work(scaled_delta: float, _game_delta: float) -> void:
+	# If we're still pathfinding to station, follow the path
+	if path_index < current_path.size():
+		# Get speed multiplier
+		var speed_mult := 1.0
+		if game_clock != null:
+			speed_mult = game_clock.speed_multiplier if not game_clock.is_paused else 0.0
+		_follow_path_working(speed_mult)
+		return
+
+	# We're at the station, count down work timer
+	if work_timer > 0.0:
+		work_timer -= scaled_delta
+		if work_timer <= 0.0:
+			_on_step_complete()
+
+## Called when the current step's timer completes
+func _on_step_complete() -> void:
+	if current_job == null:
+		_cancel_working("No job on step complete")
+		return
+
+	var step := current_job.get_current_step()
+	if step != null:
+		# Apply input transforms to items
+		_apply_step_transforms(step)
+
+	# Stop animation
+	if not current_animation.is_empty():
+		_stop_animation()
+		current_animation = ""
+
+	# Release current station if we're done with it
+	if target_station != null:
+		# Check if next step uses a different station
+		var next_step_index := current_job.current_step_index + 1
+		var next_step: RecipeStep = null
+		if next_step_index < current_job.get_total_steps():
+			next_step = current_job.recipe.get_step(next_step_index)
+
+		# Release station if next step uses different station or no next step
+		if next_step == null or next_step.station_tag != target_station.station_tag:
+			# Pick up items from station before leaving
+			_pick_up_items_from_station()
+			target_station.release()
+			target_station = null
+			current_job.target_station = null
+
+	# Advance to next step
+	if current_job.advance_step():
+		# More steps remaining
+		_start_next_work_step()
+	else:
+		# All steps complete
+		_finish_job()
+
+## Apply input_transform from step to items at the station
+func _apply_step_transforms(step: RecipeStep) -> void:
+	if step.input_transform.is_empty():
+		return
+
+	# Get all items at station (in input slots and held)
+	var items_to_transform: Array[ItemEntity] = []
+
+	if target_station != null:
+		items_to_transform.append_array(target_station.get_all_input_items())
+
+	# Also check held items
+	for item in held_items:
+		if is_instance_valid(item):
+			items_to_transform.append(item)
+
+	# Apply transforms
+	for item in items_to_transform:
+		if not is_instance_valid(item):
+			continue
+
+		if step.transforms_item(item.item_tag):
+			var new_tag := step.get_transformed_tag(item.item_tag)
+			item.item_tag = new_tag
+
+			# Also update state based on common patterns
+			if new_tag.contains("prepped"):
+				item.set_state(ItemEntity.ItemState.PREPPED)
+			elif new_tag.contains("cooked"):
+				item.set_state(ItemEntity.ItemState.COOKED)
+
+## Pick up items from station input/output slots
+func _pick_up_items_from_station() -> void:
+	if target_station == null:
+		return
+
+	# Pick up from output slots first
+	for i in range(target_station.get_output_slot_count()):
+		var item := target_station.remove_output_item(i)
+		if item != null and is_instance_valid(item):
+			_pick_up_item(item)
+
+	# Then input slots
+	for i in range(target_station.get_input_slot_count()):
+		var item := target_station.remove_input_item(i)
+		if item != null and is_instance_valid(item):
+			_pick_up_item(item)
+
+## Complete the job successfully
+func _finish_job() -> void:
+	if current_job == null:
+		current_state = State.IDLE
+		return
+
+	# Apply motive effects from recipe
+	if current_job.recipe != null:
+		for motive_name in current_job.recipe.motive_effects:
+			var effect: float = current_job.recipe.motive_effects[motive_name]
+			# Convert motive name to MotiveType if possible
+			var motive_type := _motive_name_to_type(motive_name)
+			if motive_type >= 0:
+				motives.fulfill(motive_type, effect)
+
+	# Handle consumed items - remove them
+	if current_job.recipe != null:
+		var consumed_tags := current_job.recipe.get_consumed_input_tags()
+		var items_to_remove: Array[ItemEntity] = []
+		for item in held_items:
+			if is_instance_valid(item) and consumed_tags.has(item.item_tag):
+				items_to_remove.append(item)
+		for item in items_to_remove:
+			remove_held_item(item)
+			item.queue_free()
+
+	# Release station if still reserved
+	if target_station != null:
+		if target_station.is_reserved_by(self):
+			target_station.release()
+		target_station = null
+
+	# Complete the job
+	current_job.complete()
+	current_job = null
+
+	# Drop any remaining held items
+	var remaining_items := held_items.duplicate()
+	for item in remaining_items:
+		if is_instance_valid(item):
+			_drop_item(item)
+	held_items.clear()
+
+	current_state = State.IDLE
+
+## Cancel working and release resources
+func _cancel_working(reason: String = "") -> void:
+	if reason != "":
+		print("[NPC ", npc_id, "] Cancel working: ", reason)
+
+	# Release station
+	if target_station != null:
+		# Pick up any items we placed
+		_pick_up_items_from_station()
+		if target_station.is_reserved_by(self):
+			target_station.release()
+		target_station = null
+
+	# Stop animation
+	if not current_animation.is_empty():
+		_stop_animation()
+		current_animation = ""
+
+	# Drop all held items
+	var items_to_drop := held_items.duplicate()
+	for item in items_to_drop:
+		if is_instance_valid(item):
+			_drop_item(item)
+	held_items.clear()
+
+	# Fail the job if we have one
+	if current_job != null:
+		current_job.fail(reason)
+		current_job = null
+
+	work_timer = 0.0
+	current_state = State.IDLE
+
+## Play an animation (stub - agents may not have AnimationPlayer)
+func _play_animation(anim_name: String) -> void:
+	# Check if we have an AnimationPlayer child
+	var anim_player := get_node_or_null("AnimationPlayer") as AnimationPlayer
+	if anim_player != null and anim_player.has_animation(anim_name):
+		anim_player.play(anim_name)
+
+## Stop current animation
+func _stop_animation() -> void:
+	var anim_player := get_node_or_null("AnimationPlayer") as AnimationPlayer
+	if anim_player != null:
+		anim_player.stop()
+
+## Convert motive name string to MotiveType enum
+func _motive_name_to_type(motive_name: String) -> int:
+	match motive_name.to_lower():
+		"hunger": return Motive.MotiveType.HUNGER
+		"energy": return Motive.MotiveType.ENERGY
+		"social": return Motive.MotiveType.SOCIAL
+		"hygiene": return Motive.MotiveType.HYGIENE
+		"bladder": return Motive.MotiveType.BLADDER
+		"fun", "entertainment": return Motive.MotiveType.FUN
+		_: return -1
+
+## Get current work progress (0.0 to 1.0 for current step)
+func get_work_progress() -> float:
+	if current_job == null:
+		return 0.0
+	var step := current_job.get_current_step()
+	if step == null or step.duration <= 0:
+		return 1.0
+	return 1.0 - (work_timer / step.duration)
+
+## Check if agent is currently working
+func is_working() -> bool:
+	return current_state == State.WORKING
