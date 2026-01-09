@@ -21,6 +21,35 @@
 - Job class extends RefCounted (not Node2D or Resource) for lightweight state tracking objects
 - Use static var for ID counters in classes that need unique IDs (e.g., `static var _next_id: int = 0`)
 - Test runner auto-quits in headless mode with exit code 0 (pass) or 1 (fail)
+- JobBoard.claim_job() accepts optional containers array to auto-reserve items
+- Job.release(), Job.complete(), Job.fail(), and Job.interrupt() all unreserve gathered items
+
+---
+
+## 2026-01-09 - US-009
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Extended JobBoard.claim_job() to accept optional containers parameter for auto-reserving items
+- Added _reserve_items_for_job() helper method to reserve input items and tools
+- Updated Job.release() to unreserve all gathered items before releasing
+- Updated Job.complete() to unreserve all gathered items on completion
+- Updated Job.fail() to unreserve all gathered items on failure
+- Job.interrupt() already unreserved items (from US-006)
+- Added 5 new test functions to test_items.gd with 24 new assertions:
+  - test_job_claim_reserves_items: Verifies items reserved when job claimed with containers
+  - test_job_release_unreserves_items: Verifies items unreserved on job release
+  - test_job_complete_unreserves_items: Verifies items unreserved on job completion
+  - test_job_fail_unreserves_items: Verifies items unreserved on job failure
+  - test_job_interrupt_unreserves_items: Verifies items unreserved on job interruption
+- All tests pass: 73 in test_items, 107 in test_jobboard, 93 in test_job
+- Files changed:
+  - scripts/job_board.gd (added containers param, _reserve_items_for_job method)
+  - scripts/job.gd (updated release, complete, fail to unreserve items)
+  - scripts/tests/test_items.gd (added job reservation tests)
+- **Learnings for future iterations:**
+  - claim_job() third parameter (containers) is optional for backward compatibility
+  - Items reserved during claim are tracked via job.gathered_items array
+  - All job termination states (release, complete, fail, interrupt) must unreserve items
+  - Test reservation by checking both item.is_reserved() and container.get_available_count()
 
 ---
 
