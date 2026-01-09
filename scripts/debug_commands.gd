@@ -1013,3 +1013,305 @@ func clear_runtime_walls() -> void:
 		wall_changed.emit(grid_pos, false)
 
 	runtime_walls.clear()
+
+
+# =============================================================================
+# SCENARIO SAVE/LOAD (US-007)
+# =============================================================================
+
+# Signals for scenario operations
+signal scenario_saved(path: String)
+signal scenario_loaded(path: String)
+signal scenario_cleared()
+
+# Track runtime-spawned items for cleanup and scenario save/load
+var runtime_items: Array[ItemEntity] = []
+
+
+## Save the current scenario to a JSON file
+## path: File path to save the scenario (e.g., "user://scenarios/test_setup.json")
+## Returns true if save was successful, false otherwise
+func save_scenario(path: String) -> bool:
+	if path.is_empty():
+		push_error("DebugCommands.save_scenario: path cannot be empty")
+		return false
+
+	var scenario_data: Dictionary = {
+		"version": 1,
+		"stations": _collect_station_data(),
+		"items": _collect_item_data(),
+		"npcs": _collect_npc_data(),
+		"walls": _collect_wall_data()
+	}
+
+	# Convert to JSON
+	var json_string: String = JSON.stringify(scenario_data, "\t")
+
+	# Ensure directory exists
+	var dir_path: String = path.get_base_dir()
+	if not dir_path.is_empty():
+		DirAccess.make_dir_recursive_absolute(dir_path)
+
+	# Write to file
+	var file: FileAccess = FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		push_error("DebugCommands.save_scenario: Failed to open file for writing: " + path + " (Error: " + str(FileAccess.get_open_error()) + ")")
+		return false
+
+	file.store_string(json_string)
+	file.close()
+
+	scenario_saved.emit(path)
+	return true
+
+
+## Load a scenario from a JSON file
+## path: File path to load the scenario from
+## clear_first: If true, removes existing runtime entities before loading
+## Returns true if load was successful, false otherwise
+func load_scenario(path: String, clear_first: bool = true) -> bool:
+	if path.is_empty():
+		push_error("DebugCommands.load_scenario: path cannot be empty")
+		return false
+
+	# Check if file exists
+	if not FileAccess.file_exists(path):
+		push_error("DebugCommands.load_scenario: File does not exist: " + path)
+		return false
+
+	# Read file
+	var file: FileAccess = FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		push_error("DebugCommands.load_scenario: Failed to open file for reading: " + path)
+		return false
+
+	var json_string: String = file.get_as_text()
+	file.close()
+
+	# Parse JSON
+	var json: JSON = JSON.new()
+	var parse_result: Error = json.parse(json_string)
+	if parse_result != OK:
+		push_error("DebugCommands.load_scenario: Failed to parse JSON: " + json.get_error_message())
+		return false
+
+	var scenario_data: Dictionary = json.data
+	if not scenario_data is Dictionary:
+		push_error("DebugCommands.load_scenario: Invalid scenario data format")
+		return false
+
+	# Clear existing entities if requested
+	if clear_first:
+		clear_scenario()
+
+	# Load entities
+	_load_stations(scenario_data.get("stations", []))
+	_load_items(scenario_data.get("items", []))
+	_load_npcs(scenario_data.get("npcs", []))
+	_load_walls(scenario_data.get("walls", []))
+
+	scenario_loaded.emit(path)
+	return true
+
+
+## Clear all runtime-spawned entities
+func clear_scenario() -> void:
+	clear_runtime_stations()
+	clear_runtime_items()
+	clear_runtime_npcs()
+	clear_runtime_walls()
+	scenario_cleared.emit()
+
+
+## Get all runtime-spawned items
+func get_runtime_items() -> Array[ItemEntity]:
+	# Clean up any freed items from the list
+	var valid_items: Array[ItemEntity] = []
+	for item in runtime_items:
+		if is_instance_valid(item):
+			valid_items.append(item)
+	runtime_items = valid_items
+	return runtime_items.duplicate()
+
+
+## Remove all runtime-spawned items
+func clear_runtime_items() -> void:
+	for i in range(runtime_items.size() - 1, -1, -1):
+		var item: ItemEntity = runtime_items[i]
+		if is_instance_valid(item):
+			item.queue_free()
+	runtime_items.clear()
+
+
+# -----------------------------------------------------------------------------
+# Scenario Data Collection Helpers
+# -----------------------------------------------------------------------------
+
+## Collect data for all runtime stations
+func _collect_station_data() -> Array:
+	var stations_data: Array = []
+	for station in get_runtime_stations():
+		if is_instance_valid(station):
+			stations_data.append({
+				"type": station.station_tag,
+				"position": {"x": station.global_position.x, "y": station.global_position.y},
+				"tags": [station.station_tag]  # Station uses single tag, wrap in array for consistency
+			})
+	return stations_data
+
+
+## Collect data for all runtime items
+func _collect_item_data() -> Array:
+	var items_data: Array = []
+	for item in get_runtime_items():
+		if is_instance_valid(item):
+			var item_data: Dictionary = {
+				"tag": item.item_tag,
+				"location": _get_item_location_name(item)
+			}
+
+			# Add container/station info based on location
+			match item.location:
+				ItemEntity.ItemLocation.ON_GROUND:
+					item_data["position"] = {"x": item.global_position.x, "y": item.global_position.y}
+				ItemEntity.ItemLocation.IN_CONTAINER:
+					var parent: Node = item.get_parent()
+					if is_instance_valid(parent) and parent is ItemContainer:
+						item_data["container_index"] = _find_runtime_container_index(parent)
+				ItemEntity.ItemLocation.IN_SLOT:
+					var parent: Node = item.get_parent()
+					if is_instance_valid(parent):
+						# Find station by traversing up
+						var station: Station = _find_parent_station(parent)
+						if station != null:
+							item_data["station_index"] = _find_runtime_station_index(station)
+							item_data["slot_index"] = _find_item_slot_index(item, station)
+
+			items_data.append(item_data)
+	return items_data
+
+
+## Collect data for all runtime NPCs
+func _collect_npc_data() -> Array:
+	var npcs_data: Array = []
+	for npc in get_runtime_npcs():
+		if is_instance_valid(npc):
+			var motives_dict: Dictionary = {}
+			for motive_name in VALID_MOTIVE_NAMES:
+				motives_dict[motive_name] = get_npc_motive(npc, motive_name)
+
+			npcs_data.append({
+				"position": {"x": npc.global_position.x, "y": npc.global_position.y},
+				"motives": motives_dict
+			})
+	return npcs_data
+
+
+## Collect data for all runtime walls
+func _collect_wall_data() -> Array:
+	var walls_data: Array = []
+	for grid_pos in get_runtime_walls():
+		walls_data.append({
+			"grid_x": grid_pos.x,
+			"grid_y": grid_pos.y
+		})
+	return walls_data
+
+
+## Find the index of a container in the runtime items (for reference)
+func _find_runtime_container_index(container: ItemContainer) -> int:
+	# For now, we don't track containers separately
+	# Return -1 as containers aren't in our runtime tracking
+	return -1
+
+
+## Find the parent station of a node
+func _find_parent_station(node: Node) -> Station:
+	var current: Node = node
+	while current != null:
+		if current is Station:
+			return current
+		current = current.get_parent()
+	return null
+
+
+## Find the index of a station in the runtime stations list
+func _find_runtime_station_index(station: Station) -> int:
+	var stations: Array[Station] = get_runtime_stations()
+	return stations.find(station)
+
+
+## Find the slot index of an item in a station
+func _find_item_slot_index(item: ItemEntity, station: Station) -> int:
+	# Check input slots
+	for i in range(station.get_input_slot_count()):
+		var slot_item: ItemEntity = station.get_input_item(i)
+		if slot_item == item:
+			return i
+	# Check output slots
+	for i in range(station.get_output_slot_count()):
+		var slot_item: ItemEntity = station.get_output_item(i)
+		if slot_item == item:
+			return i + station.get_input_slot_count()  # Offset for output slots
+	return -1
+
+
+# -----------------------------------------------------------------------------
+# Scenario Data Loading Helpers
+# -----------------------------------------------------------------------------
+
+## Load stations from scenario data
+func _load_stations(stations_data: Array) -> void:
+	for station_data in stations_data:
+		var type: String = station_data.get("type", "generic")
+		var pos_data: Dictionary = station_data.get("position", {})
+		var position := Vector2(pos_data.get("x", 0.0), pos_data.get("y", 0.0))
+		var tags: Array = station_data.get("tags", [])
+
+		spawn_station(type, position, tags)
+
+
+## Load items from scenario data
+func _load_items(items_data: Array) -> void:
+	for item_data in items_data:
+		var tag: String = item_data.get("tag", "")
+		if tag.is_empty():
+			continue
+
+		var location: String = item_data.get("location", "ON_GROUND")
+
+		match location:
+			"ON_GROUND":
+				var pos_data: Dictionary = item_data.get("position", {})
+				var position := Vector2(pos_data.get("x", 0.0), pos_data.get("y", 0.0))
+				var item: ItemEntity = spawn_item(tag, position)
+				if item != null:
+					runtime_items.append(item)
+			"IN_SLOT":
+				var station_index: int = item_data.get("station_index", -1)
+				if station_index >= 0 and station_index < runtime_stations.size():
+					var station: Station = runtime_stations[station_index]
+					var item: ItemEntity = spawn_item(tag, station)
+					if item != null:
+						runtime_items.append(item)
+			# IN_CONTAINER handled similarly if we add container tracking
+
+
+## Load NPCs from scenario data
+func _load_npcs(npcs_data: Array) -> void:
+	for npc_data in npcs_data:
+		var pos_data: Dictionary = npc_data.get("position", {})
+		var position := Vector2(pos_data.get("x", 0.0), pos_data.get("y", 0.0))
+		var motives: Dictionary = npc_data.get("motives", {})
+
+		spawn_npc(position, motives)
+
+
+## Load walls from scenario data
+func _load_walls(walls_data: Array) -> void:
+	for wall_data in walls_data:
+		var grid_x: int = wall_data.get("grid_x", 0)
+		var grid_y: int = wall_data.get("grid_y", 0)
+		var grid_pos := Vector2i(grid_x, grid_y)
+
+		paint_wall(grid_pos, true)

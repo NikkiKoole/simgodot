@@ -182,3 +182,35 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Wall visual uses same WALL_COLOR and TILE_SIZE constants as level.gd for consistency
 
 ---
+
+## 2026-01-09 - US-007
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented save_scenario(path) in DebugCommands
+- Saves JSON with version, stations, items, npcs, and walls data
+- Implemented load_scenario(path, clear_first) in DebugCommands
+- clear_first=true (default) removes existing runtime entities before loading
+- Implemented clear_scenario() removing all runtime-spawned entities
+- Added scenario_saved, scenario_loaded, and scenario_cleared signals
+- Added runtime_items tracking array with get_runtime_items() and clear_runtime_items()
+- Scenario data includes:
+  - Stations: type, position, tags
+  - Items: tag, location state, position/station_index/slot_index
+  - NPCs: position, all motive values (0-100 range)
+  - Walls: grid_x, grid_y coordinates
+- Added 14 new tests covering save, load, clear, signals, and complex round-trip scenarios (71 new assertions)
+- All 12 test suites pass (1038 total assertions)
+
+**Files changed:**
+- scripts/debug_commands.gd (added scenario save/load methods, signals, and helpers)
+- scripts/tests/test_debug_commands.gd (added 14 scenario save/load tests)
+- scripts/ralph/prd.json (marked US-007 as passes: true)
+
+**Learnings for future iterations:**
+- Use JSON.stringify with "\t" indent for human-readable scenario files
+- DirAccess.make_dir_recursive_absolute() creates parent directories automatically
+- FileAccess.file_exists() checks before attempting to load
+- Track runtime items separately from spawned items for proper cleanup
+- JSON parse errors accessible via json.get_error_message()
+- Round-trip tests are essential - verify data survives save/clear/load cycle
+
+---

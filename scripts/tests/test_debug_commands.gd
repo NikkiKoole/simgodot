@@ -82,6 +82,22 @@ func run_tests() -> void:
 	await test_clear_runtime_walls()
 	await test_world_grid_conversion()
 
+	# US-007: Scenario save/load tests
+	await test_save_scenario_empty()
+	await test_save_scenario_with_stations()
+	await test_save_scenario_with_npcs()
+	await test_save_scenario_with_walls()
+	await test_save_scenario_signal()
+	test_save_scenario_invalid_path()
+	await test_load_scenario_basic()
+	await test_load_scenario_clear_first()
+	await test_load_scenario_no_clear()
+	await test_load_scenario_signal()
+	test_load_scenario_invalid_path()
+	await test_clear_scenario()
+	test_clear_scenario_signal()
+	await test_scenario_round_trip_complex()
+
 	_log_summary()
 
 
@@ -1541,3 +1557,518 @@ func test_world_grid_conversion() -> void:
 	var world_converted: Vector2 = DebugCommands.grid_to_world(original_grid)
 	var back_to_grid: Vector2i = DebugCommands.world_to_grid(world_converted)
 	assert_eq(back_to_grid, original_grid, "Round-trip conversion should preserve grid position")
+
+
+# =============================================================================
+# US-007: Scenario Save/Load Tests
+# =============================================================================
+
+const TEST_SCENARIO_PATH := "user://test_scenarios/test_scenario.json"
+const TEST_SCENARIO_PATH_2 := "user://test_scenarios/test_scenario_2.json"
+
+
+func _cleanup_test_scenarios() -> void:
+	# Remove test scenario files if they exist
+	if FileAccess.file_exists(TEST_SCENARIO_PATH):
+		DirAccess.remove_absolute(TEST_SCENARIO_PATH)
+	if FileAccess.file_exists(TEST_SCENARIO_PATH_2):
+		DirAccess.remove_absolute(TEST_SCENARIO_PATH_2)
+
+
+func test_save_scenario_empty() -> void:
+	test("save_scenario with empty scenario creates valid JSON")
+
+	# Clear everything first
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+
+	_cleanup_test_scenarios()
+
+	var result: bool = DebugCommands.save_scenario(TEST_SCENARIO_PATH)
+
+	assert_true(result, "save_scenario should return true")
+	assert_true(FileAccess.file_exists(TEST_SCENARIO_PATH), "Scenario file should exist")
+
+	# Verify JSON is valid
+	var file: FileAccess = FileAccess.open(TEST_SCENARIO_PATH, FileAccess.READ)
+	assert_not_null(file, "File should be readable")
+	var json_string: String = file.get_as_text()
+	file.close()
+
+	var json: JSON = JSON.new()
+	var parse_result: Error = json.parse(json_string)
+	assert_eq(parse_result, OK, "JSON should be valid")
+
+	var data: Dictionary = json.data
+	assert_true(data.has("version"), "Data should have version")
+	assert_true(data.has("stations"), "Data should have stations array")
+	assert_true(data.has("items"), "Data should have items array")
+	assert_true(data.has("npcs"), "Data should have npcs array")
+	assert_true(data.has("walls"), "Data should have walls array")
+
+	_cleanup_test_scenarios()
+
+
+func test_save_scenario_with_stations() -> void:
+	test("save_scenario saves station data correctly")
+
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+
+	_cleanup_test_scenarios()
+
+	# Spawn some stations
+	var station1: Station = DebugCommands.spawn_station("counter", Vector2(64, 64))
+	var station2: Station = DebugCommands.spawn_station("stove", Vector2(128, 64))
+
+	await get_tree().process_frame
+
+	var result: bool = DebugCommands.save_scenario(TEST_SCENARIO_PATH)
+
+	assert_true(result, "save_scenario should return true")
+
+	# Read and verify
+	var file: FileAccess = FileAccess.open(TEST_SCENARIO_PATH, FileAccess.READ)
+	var json: JSON = JSON.new()
+	json.parse(file.get_as_text())
+	file.close()
+
+	var data: Dictionary = json.data
+	var stations: Array = data.get("stations", [])
+
+	assert_eq(stations.size(), 2, "Should have 2 stations saved")
+
+	# Verify first station
+	var s1: Dictionary = stations[0]
+	assert_eq(s1.get("type"), "counter", "First station should be counter")
+	var pos1: Dictionary = s1.get("position", {})
+	assert_eq(pos1.get("x"), 64.0, "First station x should be 64")
+	assert_eq(pos1.get("y"), 64.0, "First station y should be 64")
+
+	# Cleanup
+	DebugCommands.clear_scenario()
+	_cleanup_test_scenarios()
+
+
+func test_save_scenario_with_npcs() -> void:
+	test("save_scenario saves NPC data with motives correctly")
+
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+
+	_cleanup_test_scenarios()
+
+	# Spawn NPC with custom motives
+	var custom_motives := {"hunger": 25.0, "energy": 75.0, "bladder": 50.0, "hygiene": 100.0, "fun": 10.0}
+	var npc: Node = DebugCommands.spawn_npc(Vector2(200, 200), custom_motives)
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var result: bool = DebugCommands.save_scenario(TEST_SCENARIO_PATH)
+
+	assert_true(result, "save_scenario should return true")
+
+	# Read and verify
+	var file: FileAccess = FileAccess.open(TEST_SCENARIO_PATH, FileAccess.READ)
+	var json: JSON = JSON.new()
+	json.parse(file.get_as_text())
+	file.close()
+
+	var data: Dictionary = json.data
+	var npcs: Array = data.get("npcs", [])
+
+	assert_eq(npcs.size(), 1, "Should have 1 NPC saved")
+
+	var n1: Dictionary = npcs[0]
+	var pos: Dictionary = n1.get("position", {})
+	assert_eq(pos.get("x"), 200.0, "NPC x should be 200")
+	assert_eq(pos.get("y"), 200.0, "NPC y should be 200")
+
+	var motives: Dictionary = n1.get("motives", {})
+	assert_eq(motives.get("hunger"), 25.0, "Hunger should be 25")
+	assert_eq(motives.get("energy"), 75.0, "Energy should be 75")
+	assert_eq(motives.get("bladder"), 50.0, "Bladder should be 50")
+	assert_eq(motives.get("hygiene"), 100.0, "Hygiene should be 100")
+	assert_eq(motives.get("fun"), 10.0, "Fun should be 10")
+
+	# Cleanup
+	DebugCommands.clear_scenario()
+	_cleanup_test_scenarios()
+
+
+func test_save_scenario_with_walls() -> void:
+	test("save_scenario saves wall data correctly")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+
+	_cleanup_test_scenarios()
+
+	# Paint some walls
+	DebugCommands.paint_wall(Vector2i(3, 3), true)
+	DebugCommands.paint_wall(Vector2i(4, 4), true)
+	DebugCommands.paint_wall(Vector2i(5, 5), true)
+
+	var result: bool = DebugCommands.save_scenario(TEST_SCENARIO_PATH)
+
+	assert_true(result, "save_scenario should return true")
+
+	# Read and verify
+	var file: FileAccess = FileAccess.open(TEST_SCENARIO_PATH, FileAccess.READ)
+	var json: JSON = JSON.new()
+	json.parse(file.get_as_text())
+	file.close()
+
+	var data: Dictionary = json.data
+	var walls: Array = data.get("walls", [])
+
+	assert_eq(walls.size(), 3, "Should have 3 walls saved")
+
+	# Verify wall positions are present (order may vary)
+	var wall_positions: Array = []
+	for wall in walls:
+		wall_positions.append(Vector2i(wall.get("grid_x", 0), wall.get("grid_y", 0)))
+
+	assert_true(Vector2i(3, 3) in wall_positions, "Wall at (3,3) should be saved")
+	assert_true(Vector2i(4, 4) in wall_positions, "Wall at (4,4) should be saved")
+	assert_true(Vector2i(5, 5) in wall_positions, "Wall at (5,5) should be saved")
+
+	# Cleanup
+	DebugCommands.clear_scenario()
+	_destroy_mock_level()
+	_cleanup_test_scenarios()
+
+
+func test_save_scenario_signal() -> void:
+	test("save_scenario emits scenario_saved signal")
+
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+
+	_cleanup_test_scenarios()
+
+	var signal_data: Array = [false, ""]
+
+	var callback := func(path: String) -> void:
+		signal_data[0] = true
+		signal_data[1] = path
+
+	DebugCommands.scenario_saved.connect(callback)
+
+	DebugCommands.save_scenario(TEST_SCENARIO_PATH)
+
+	assert_true(signal_data[0], "scenario_saved signal should be emitted")
+	assert_eq(signal_data[1], TEST_SCENARIO_PATH, "Signal should pass the save path")
+
+	# Cleanup
+	DebugCommands.scenario_saved.disconnect(callback)
+	_cleanup_test_scenarios()
+
+
+func test_save_scenario_invalid_path() -> void:
+	test("save_scenario returns false for invalid path")
+
+	var result: bool = DebugCommands.save_scenario("")
+	assert_false(result, "save_scenario should return false for empty path")
+
+
+func test_load_scenario_basic() -> void:
+	test("load_scenario loads saved scenario correctly")
+
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+
+	_cleanup_test_scenarios()
+
+	# Create a scenario
+	var station: Station = DebugCommands.spawn_station("sink", Vector2(96, 96))
+	var npc: Node = DebugCommands.spawn_npc(Vector2(150, 150), {"hunger": 30.0})
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# Save it
+	DebugCommands.save_scenario(TEST_SCENARIO_PATH)
+
+	# Clear and verify cleared
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	assert_eq(DebugCommands.get_runtime_stations().size(), 0, "Should have 0 stations after clear")
+	assert_eq(DebugCommands.get_runtime_npcs().size(), 0, "Should have 0 NPCs after clear")
+
+	# Load the scenario
+	var result: bool = DebugCommands.load_scenario(TEST_SCENARIO_PATH)
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	assert_true(result, "load_scenario should return true")
+
+	# Verify entities were loaded
+	var loaded_stations: Array[Station] = DebugCommands.get_runtime_stations()
+	assert_eq(loaded_stations.size(), 1, "Should have 1 station after load")
+	assert_eq(loaded_stations[0].station_tag, "sink", "Station should be sink")
+
+	var loaded_npcs: Array[Node] = DebugCommands.get_runtime_npcs()
+	assert_eq(loaded_npcs.size(), 1, "Should have 1 NPC after load")
+
+	var loaded_hunger: float = DebugCommands.get_npc_motive(loaded_npcs[0], "hunger")
+	assert_eq(loaded_hunger, 30.0, "NPC hunger should be 30")
+
+	# Cleanup
+	DebugCommands.clear_scenario()
+	_cleanup_test_scenarios()
+
+
+func test_load_scenario_clear_first() -> void:
+	test("load_scenario with clear_first=true clears existing entities")
+
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+
+	_cleanup_test_scenarios()
+
+	# Create and save a simple scenario
+	DebugCommands.spawn_station("counter", Vector2(64, 64))
+	await get_tree().process_frame
+	DebugCommands.save_scenario(TEST_SCENARIO_PATH)
+
+	# Clear and create a different scenario
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+	DebugCommands.spawn_station("stove", Vector2(128, 128))
+	DebugCommands.spawn_station("fridge", Vector2(192, 192))
+	await get_tree().process_frame
+
+	assert_eq(DebugCommands.get_runtime_stations().size(), 2, "Should have 2 stations before load")
+
+	# Load with clear_first=true (default)
+	DebugCommands.load_scenario(TEST_SCENARIO_PATH, true)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# Should only have the loaded station
+	var stations: Array[Station] = DebugCommands.get_runtime_stations()
+	assert_eq(stations.size(), 1, "Should have 1 station after load with clear")
+	assert_eq(stations[0].station_tag, "counter", "Station should be counter from saved scenario")
+
+	# Cleanup
+	DebugCommands.clear_scenario()
+	_cleanup_test_scenarios()
+
+
+func test_load_scenario_no_clear() -> void:
+	test("load_scenario with clear_first=false adds to existing entities")
+
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+
+	_cleanup_test_scenarios()
+
+	# Create and save a simple scenario
+	DebugCommands.spawn_station("counter", Vector2(64, 64))
+	await get_tree().process_frame
+	DebugCommands.save_scenario(TEST_SCENARIO_PATH)
+
+	# Clear and create existing entities
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+	DebugCommands.spawn_station("stove", Vector2(128, 128))
+	await get_tree().process_frame
+
+	assert_eq(DebugCommands.get_runtime_stations().size(), 1, "Should have 1 station before load")
+
+	# Load with clear_first=false
+	DebugCommands.load_scenario(TEST_SCENARIO_PATH, false)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# Should have both stations
+	var stations: Array[Station] = DebugCommands.get_runtime_stations()
+	assert_eq(stations.size(), 2, "Should have 2 stations after load without clear")
+
+	# Cleanup
+	DebugCommands.clear_scenario()
+	_cleanup_test_scenarios()
+
+
+func test_load_scenario_signal() -> void:
+	test("load_scenario emits scenario_loaded signal")
+
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+
+	_cleanup_test_scenarios()
+
+	# Save an empty scenario
+	DebugCommands.save_scenario(TEST_SCENARIO_PATH)
+
+	var signal_data: Array = [false, ""]
+
+	var callback := func(path: String) -> void:
+		signal_data[0] = true
+		signal_data[1] = path
+
+	DebugCommands.scenario_loaded.connect(callback)
+
+	DebugCommands.load_scenario(TEST_SCENARIO_PATH)
+
+	await get_tree().process_frame
+
+	assert_true(signal_data[0], "scenario_loaded signal should be emitted")
+	assert_eq(signal_data[1], TEST_SCENARIO_PATH, "Signal should pass the load path")
+
+	# Cleanup
+	DebugCommands.scenario_loaded.disconnect(callback)
+	_cleanup_test_scenarios()
+
+
+func test_load_scenario_invalid_path() -> void:
+	test("load_scenario returns false for invalid path")
+
+	var result1: bool = DebugCommands.load_scenario("")
+	assert_false(result1, "load_scenario should return false for empty path")
+
+	var result2: bool = DebugCommands.load_scenario("user://non_existent_file.json")
+	assert_false(result2, "load_scenario should return false for non-existent file")
+
+
+func test_clear_scenario() -> void:
+	test("clear_scenario removes all runtime entities")
+
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+
+	# Create various entities
+	DebugCommands.spawn_station("counter", Vector2(64, 64))
+	DebugCommands.spawn_station("stove", Vector2(128, 64))
+	DebugCommands.spawn_npc(Vector2(100, 100))
+	DebugCommands.spawn_npc(Vector2(200, 200))
+
+	await get_tree().process_frame
+
+	assert_eq(DebugCommands.get_runtime_stations().size(), 2, "Should have 2 stations")
+	assert_eq(DebugCommands.get_runtime_npcs().size(), 2, "Should have 2 NPCs")
+
+	# Clear everything
+	DebugCommands.clear_scenario()
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	assert_eq(DebugCommands.get_runtime_stations().size(), 0, "Should have 0 stations after clear")
+	assert_eq(DebugCommands.get_runtime_npcs().size(), 0, "Should have 0 NPCs after clear")
+	assert_eq(DebugCommands.get_runtime_items().size(), 0, "Should have 0 items after clear")
+
+
+func test_clear_scenario_signal() -> void:
+	test("clear_scenario emits scenario_cleared signal")
+
+	var signal_received: Array = [false]
+
+	var callback := func() -> void:
+		signal_received[0] = true
+
+	DebugCommands.scenario_cleared.connect(callback)
+
+	DebugCommands.clear_scenario()
+
+	assert_true(signal_received[0], "scenario_cleared signal should be emitted")
+
+	# Cleanup
+	DebugCommands.scenario_cleared.disconnect(callback)
+
+
+func test_scenario_round_trip_complex() -> void:
+	test("Complex scenario round-trip preserves all data")
+
+	_create_mock_level()
+	await get_tree().process_frame
+
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+
+	_cleanup_test_scenarios()
+
+	# Create a complex scenario
+	var station1: Station = DebugCommands.spawn_station("counter", Vector2(64, 64))
+	var station2: Station = DebugCommands.spawn_station("stove", Vector2(128, 64))
+	var station3: Station = DebugCommands.spawn_station("fridge", Vector2(192, 64))
+
+	var npc1: Node = DebugCommands.spawn_npc(Vector2(100, 200), {"hunger": 20.0, "energy": 80.0})
+	var npc2: Node = DebugCommands.spawn_npc(Vector2(200, 200), {"hunger": 50.0, "bladder": 30.0})
+
+	DebugCommands.paint_wall(Vector2i(3, 3), true)
+	DebugCommands.paint_wall(Vector2i(4, 3), true)
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# Verify initial state
+	assert_eq(DebugCommands.get_runtime_stations().size(), 3, "Should have 3 stations initially")
+	assert_eq(DebugCommands.get_runtime_npcs().size(), 2, "Should have 2 NPCs initially")
+	assert_eq(DebugCommands.get_runtime_walls().size(), 2, "Should have 2 walls initially")
+
+	# Save scenario
+	var save_result: bool = DebugCommands.save_scenario(TEST_SCENARIO_PATH)
+	assert_true(save_result, "Save should succeed")
+
+	# Clear everything
+	DebugCommands.clear_scenario()
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	assert_eq(DebugCommands.get_runtime_stations().size(), 0, "Should have 0 stations after clear")
+	assert_eq(DebugCommands.get_runtime_npcs().size(), 0, "Should have 0 NPCs after clear")
+	assert_eq(DebugCommands.get_runtime_walls().size(), 0, "Should have 0 walls after clear")
+
+	# Load scenario
+	var load_result: bool = DebugCommands.load_scenario(TEST_SCENARIO_PATH)
+	assert_true(load_result, "Load should succeed")
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# Verify loaded state matches original
+	var loaded_stations: Array[Station] = DebugCommands.get_runtime_stations()
+	assert_eq(loaded_stations.size(), 3, "Should have 3 stations after load")
+
+	# Check station types
+	var station_types: Array = []
+	for station in loaded_stations:
+		station_types.append(station.station_tag)
+	assert_true("counter" in station_types, "Counter should be loaded")
+	assert_true("stove" in station_types, "Stove should be loaded")
+	assert_true("fridge" in station_types, "Fridge should be loaded")
+
+	var loaded_npcs: Array[Node] = DebugCommands.get_runtime_npcs()
+	assert_eq(loaded_npcs.size(), 2, "Should have 2 NPCs after load")
+
+	# Check NPC motives (order may vary, so check both)
+	var found_hungry_npc: bool = false
+	var found_bladder_npc: bool = false
+	for npc in loaded_npcs:
+		var hunger: float = DebugCommands.get_npc_motive(npc, "hunger")
+		var bladder: float = DebugCommands.get_npc_motive(npc, "bladder")
+		if hunger == 20.0:
+			found_hungry_npc = true
+		if bladder == 30.0:
+			found_bladder_npc = true
+	assert_true(found_hungry_npc, "Should find NPC with hunger=20")
+	assert_true(found_bladder_npc, "Should find NPC with bladder=30")
+
+	var loaded_walls: Dictionary = DebugCommands.get_runtime_walls()
+	assert_eq(loaded_walls.size(), 2, "Should have 2 walls after load")
+	assert_true(loaded_walls.has(Vector2i(3, 3)), "Wall at (3,3) should be loaded")
+	assert_true(loaded_walls.has(Vector2i(4, 3)), "Wall at (4,3) should be loaded")
+
+	# Cleanup
+	DebugCommands.clear_scenario()
+	_destroy_mock_level()
+	_cleanup_test_scenarios()
