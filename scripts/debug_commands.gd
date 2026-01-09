@@ -409,9 +409,11 @@ const STATION_COLORS: Dictionary = {
 ## Spawn a station of the given type at a position
 ## type: One of VALID_STATION_TYPES (counter, stove, sink, couch, fridge, toilet, tv, generic)
 ## position: World position (will be snapped to grid)
-## tags: Optional array of additional tags to apply to the station
 ## Returns the spawned Station, or null if spawning failed
-func spawn_station(type: String, position: Vector2, tags: Array = []) -> Station:
+## Note: Stations currently support only a single tag (station_tag) which is set to the type.
+## Multi-tag support (e.g., a station that is both "counter" and "stove") could be
+## added in a future PRD if needed - would require changes to Station, RecipeStep matching, etc.
+func spawn_station(type: String, position: Vector2) -> Station:
 	# Validate station type
 	if type not in VALID_STATION_TYPES:
 		push_error("DebugCommands.spawn_station: Invalid station type '" + type + "'. Valid types: " + str(VALID_STATION_TYPES))
@@ -701,14 +703,6 @@ func spawn_npc(position: Vector2, motives_dict: Dictionary = {}) -> Node:
 	npc_spawned.emit(npc)
 
 	return npc
-
-
-## Get all NPCs from the level
-func _get_all_npcs() -> Array:
-	var level: Node = _get_level_node()
-	if level != null and level.has_method("get_all_npcs"):
-		return level.get_all_npcs()
-	return []
 
 
 ## Set a single motive for an NPC

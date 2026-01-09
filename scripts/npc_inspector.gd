@@ -21,6 +21,9 @@ var on_path_visibility_changed: Callable
 # Motive slider references (created dynamically)
 var motive_sliders: Dictionary = {}  # {motive_name: HSlider}
 
+# Flag to prevent feedback loops when programmatically updating sliders
+var _updating_sliders: bool = false
+
 # Motive names we display (matches DebugCommands.VALID_MOTIVE_NAMES)
 const MOTIVE_NAMES: Array[String] = ["hunger", "energy", "bladder", "hygiene", "fun"]
 
@@ -177,25 +180,26 @@ func _update_slider_values() -> void:
 	var data: Dictionary = DebugCommands.get_inspection_data(current_npc)
 	var motives_data: Dictionary = data.get("motives", {})
 
+	# Set flag to prevent feedback loop when updating slider values programmatically
+	_updating_sliders = true
+
 	for motive_name in MOTIVE_NAMES:
 		var slider: HSlider = motive_sliders.get(motive_name)
 		if slider != null:
 			# Get internal value (-100 to +100) and convert to 0-100 range
 			var internal_value: float = motives_data.get(motive_name, 0.0)
 			var display_value: float = (internal_value + 100.0) / 2.0
-
-			# Temporarily disconnect signal to avoid feedback loop
-			if slider.value_changed.is_connected(_on_motive_slider_changed):
-				slider.value_changed.disconnect(_on_motive_slider_changed)
-
 			slider.value = display_value
 
-			# Reconnect signal
-			slider.value_changed.connect(_on_motive_slider_changed.bind(motive_name))
+	_updating_sliders = false
 
 
 ## Handle motive slider value changes
 func _on_motive_slider_changed(value: float, motive_name: String) -> void:
+	# Skip if we're programmatically updating sliders (prevents feedback loop)
+	if _updating_sliders:
+		return
+
 	if current_npc == null or not is_instance_valid(current_npc):
 		return
 
