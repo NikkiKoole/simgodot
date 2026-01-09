@@ -86,6 +86,15 @@ Note: Despite the name "Godot 3.app", this is actually Godot 4.5.1.
 - Location tracking with ItemLocation (IN_CONTAINER, IN_HAND, IN_SLOT, ON_GROUND)
 - Reservation system for agent claiming
 
+### JobBoard Singleton (`scripts/job_board.gd`)
+- Autoload singleton registered in project.godot as `JobBoard`
+- **Do NOT use `class_name` for autoload singletons** - causes "hides an autoload singleton" error
+- Central job management: post, query, claim, release jobs
+- Key methods: `post_job(recipe, priority)`, `get_available_jobs()`, `claim_job(job, agent)`, `release_job(job)`
+- Motive-based queries: `get_jobs_for_motive(motive_name)`, `get_available_jobs_for_motive(motive_name)`
+- Priority selection: `get_highest_priority_job()`, `get_highest_priority_job_for_motive(motive_name)`
+- Signals: `job_posted`, `job_claimed`, `job_completed`, `job_released`, `job_failed`
+
 ### Container System (`scripts/container.gd`)
 - Class name is `ItemContainer` (not `Container` - that's a reserved Godot class)
 - Stores multiple ItemEntity references with capacity limits
@@ -149,3 +158,13 @@ Test scenes should have:
 - Instantiate from preloaded scenes: `const Scene = preload("res://...")`
 - Clean up with `queue_free()` after each test
 - Test global positions account for parent transforms
+- **Lambda capture gotcha**: GDScript lambdas capture local variables by value, not reference. To track signal state in tests, use a Dictionary instead of local booleans:
+  ```gdscript
+  # BAD - won't work, lambda captures `received = false` at definition time
+  var received := false
+  signal.connect(func(_j): received = true)
+  
+  # GOOD - Dictionary is passed by reference
+  var state := {"received": false}
+  signal.connect(func(_j): state["received"] = true)
+  ```
