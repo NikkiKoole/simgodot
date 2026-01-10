@@ -138,3 +138,21 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Only ground items (when output slot is full) get registered with Level.all_items
   - Tests use real Level (LevelScene.instantiate()) instead of mocks for more accurate testing
 ---
+
+## 2026-01-10 - US-009
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Verified backward compatibility of existing tests with new item discovery system
+- Files changed: None - all existing tests already pass
+- **Verification:**
+  - All 20 test suites pass (1385 total assertions)
+  - test_jobboard.gd: 247 assertions pass (includes container workflow tests)
+  - test_agent_hauling.gd: 35 assertions pass (container-based hauling)
+  - `test_can_start_container_items_unchanged` explicitly tests backward compat for can_start_job
+  - `test_reserve_from_container` tests container reservation still works
+  - can_start_job() signature is backward compatible (level parameter is optional)
+  - claim_job() signature is backward compatible (stations and level parameters are optional)
+- **Learnings for future iterations:**
+  - When adding optional parameters to existing methods, always add them at the end with default values
+  - Existing tests serve as regression tests - no need to duplicate coverage with new test names
+  - The test criteria in PRD suggested specific test names but existing tests already covered the same functionality
+---

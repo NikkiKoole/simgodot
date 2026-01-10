@@ -200,7 +200,7 @@
         "test_backward_compatible_hauling: NPC hauling from containers unchanged"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Ensure no regression. If can_start_job signature changes, update call sites."
     },
     {
