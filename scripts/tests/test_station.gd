@@ -20,11 +20,17 @@ func run_tests() -> void:
 
 	test_station_creation()
 	test_station_reservation()
-	test_station_slot_discovery()
-	test_station_input_slots()
-	test_station_output_slots()
-	test_station_slot_operations()
-	test_station_agent_footprint()
+	await test_station_slot_discovery()
+	await test_station_input_slots()
+	await test_station_output_slots()
+	await test_station_slot_operations()
+	await test_station_agent_footprint()
+	# US-002: get_available_output_items_by_tag tests
+	await test_get_output_items_empty()
+	await test_get_output_items_finds_matching()
+	await test_get_output_items_excludes_input_slots()
+	await test_get_output_items_excludes_reserved()
+	await test_get_output_items_multiple_stations()
 
 	_log_summary()
 
@@ -43,6 +49,136 @@ func test_station_creation() -> void:
 	assert_true(station.is_available(), "Station should be available initially")
 
 	station.queue_free()
+
+
+## US-002: get_available_output_items_by_tag tests
+
+func test_get_output_items_empty() -> void:
+	test("Returns empty when no output items")
+
+	var station: Station = StationScene.instantiate()
+	test_area.add_child(station)
+	await get_tree().process_frame
+
+	var result: Array[ItemEntity] = station.get_available_output_items_by_tag("cooked_food")
+	assert_array_size(result, 0, "Should return empty array when no output items")
+
+	station.queue_free()
+
+
+func test_get_output_items_finds_matching() -> void:
+	test("Returns items matching tag in output slots")
+
+	var station: Station = StationScene.instantiate()
+	test_area.add_child(station)
+	await get_tree().process_frame
+
+	var item: ItemEntity = ItemEntityScene.instantiate()
+	item.item_tag = "cooked_food"
+	test_area.add_child(item)
+
+	station.place_output_item(item, 0)
+
+	var result: Array[ItemEntity] = station.get_available_output_items_by_tag("cooked_food")
+	assert_array_size(result, 1, "Should find 1 cooked_food item in output slot")
+	assert_array_contains(result, item, "Should contain the placed item")
+
+	# Non-matching tag returns empty
+	var non_match: Array[ItemEntity] = station.get_available_output_items_by_tag("raw_food")
+	assert_array_size(non_match, 0, "Should return empty for non-matching tag")
+
+	station.queue_free()
+
+
+func test_get_output_items_excludes_input_slots() -> void:
+	test("Does not return items from input slots")
+
+	var station: Station = StationScene.instantiate()
+	test_area.add_child(station)
+	await get_tree().process_frame
+
+	var input_item: ItemEntity = ItemEntityScene.instantiate()
+	var output_item: ItemEntity = ItemEntityScene.instantiate()
+	input_item.item_tag = "raw_food"
+	output_item.item_tag = "raw_food"
+	test_area.add_child(input_item)
+	test_area.add_child(output_item)
+
+	station.place_input_item(input_item, 0)
+	station.place_output_item(output_item, 0)
+
+	var result: Array[ItemEntity] = station.get_available_output_items_by_tag("raw_food")
+	assert_array_size(result, 1, "Should only find output item, not input item")
+	assert_array_contains(result, output_item, "Should contain output item")
+	assert_array_not_contains(result, input_item, "Should not contain input item")
+
+	station.queue_free()
+
+
+func test_get_output_items_excludes_reserved() -> void:
+	test("Does not return reserved items")
+
+	var station: Station = StationScene.instantiate()
+	test_area.add_child(station)
+	await get_tree().process_frame
+
+	var item: ItemEntity = ItemEntityScene.instantiate()
+	item.item_tag = "cooked_food"
+	test_area.add_child(item)
+
+	station.place_output_item(item, 0)
+
+	# Before reservation, item is found
+	var before_reserve: Array[ItemEntity] = station.get_available_output_items_by_tag("cooked_food")
+	assert_array_size(before_reserve, 1, "Should find item before reservation")
+
+	# Reserve item
+	var fake_agent := Node.new()
+	test_area.add_child(fake_agent)
+	item.reserve_item(fake_agent)
+
+	# After reservation, item is not found
+	var after_reserve: Array[ItemEntity] = station.get_available_output_items_by_tag("cooked_food")
+	assert_array_size(after_reserve, 0, "Should not find reserved item")
+
+	# Cleanup
+	item.release_item()
+	fake_agent.queue_free()
+	station.queue_free()
+
+
+func test_get_output_items_multiple_stations() -> void:
+	test("Works correctly across multiple stations")
+
+	var station1: Station = StationScene.instantiate()
+	var station2: Station = StationScene.instantiate()
+	test_area.add_child(station1)
+	test_area.add_child(station2)
+	await get_tree().process_frame
+
+	var item1: ItemEntity = ItemEntityScene.instantiate()
+	var item2: ItemEntity = ItemEntityScene.instantiate()
+	item1.item_tag = "cooked_food"
+	item2.item_tag = "cooked_food"
+	test_area.add_child(item1)
+	test_area.add_child(item2)
+
+	station1.place_output_item(item1, 0)
+	station2.place_output_item(item2, 0)
+
+	# Each station returns only its own items
+	var result1: Array[ItemEntity] = station1.get_available_output_items_by_tag("cooked_food")
+	assert_array_size(result1, 1, "Station1 should find 1 item")
+	assert_array_contains(result1, item1, "Station1 should contain item1")
+	assert_array_not_contains(result1, item2, "Station1 should not contain item2")
+
+	var result2: Array[ItemEntity] = station2.get_available_output_items_by_tag("cooked_food")
+	assert_array_size(result2, 1, "Station2 should find 1 item")
+	assert_array_contains(result2, item2, "Station2 should contain item2")
+	assert_array_not_contains(result2, item1, "Station2 should not contain item1")
+
+	station1.queue_free()
+	station2.queue_free()
 
 
 func test_station_reservation() -> void:

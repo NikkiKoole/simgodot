@@ -213,6 +213,15 @@ func get_all_output_items() -> Array[ItemEntity]:
 		items.append(item)
 	return items
 
+## Get available output items matching a tag (unreserved items only)
+## Returns items in output slots that match the tag and are not reserved
+func get_available_output_items_by_tag(tag: String) -> Array[ItemEntity]:
+	var items: Array[ItemEntity] = []
+	for item in output_slot_items.values():
+		if item.item_tag == tag and not item.is_reserved():
+			items.append(item)
+	return items
+
 ## Clear all items from slots (does not free them)
 func clear_all_slots() -> void:
 	for slot_index in input_slot_items.keys():
