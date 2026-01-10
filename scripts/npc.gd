@@ -70,6 +70,7 @@ var held_items: Array[ItemEntity] = []
 var available_containers: Array[ItemContainer] = []
 var target_container: ItemContainer = null
 var target_ground_item: ItemEntity = null  # Ground item being pathfound to (US-006)
+var target_station_output: Station = null  # Station with output items to pick up (US-007)
 var items_to_gather: Array[Dictionary] = []  # [{tag: String, quantity: int}]
 
 # Job system / Working
@@ -628,20 +629,20 @@ func _start_gathering_next_item() -> bool:
 		"container":
 			target_container = source["source"] as ItemContainer
 			target_ground_item = null
+			target_station_output = null
 			_pathfind_to_container(target_container)
 			return true
 		"station_output":
-			# For station output, pathfind to station (handled in US-007)
-			# For now, treat similar to container - NPC goes to station
-			var station: Station = source["source"] as Station
+			# Pathfind to station to pick up from output slot (US-007)
+			target_station_output = source["source"] as Station
 			target_container = null
 			target_ground_item = null
-			# TODO: US-007 will add proper station output pickup
-			# For now, skip station outputs and look for other sources
-			pass
+			_pathfind_to_station_output(target_station_output)
+			return true
 		"ground":
 			target_ground_item = source["source"] as ItemEntity
 			target_container = null
+			target_station_output = null
 			_pathfind_to_ground_item(target_ground_item)
 			return true
 		"none":
@@ -836,14 +837,49 @@ func _pathfind_to_ground_item(item: ItemEntity) -> void:
 		# No path found
 		_cancel_hauling()
 
+## Pathfind to a station to pick up output items (US-007)
+func _pathfind_to_station_output(station: Station) -> void:
+	if astar == null or station == null:
+		_cancel_hauling()
+		return
+
+	var target_pos := station.get_agent_position()
+
+	# Convert world positions to grid coordinates
+	var from_grid := Vector2i(
+		int(global_position.x / TILE_SIZE),
+		int(global_position.y / TILE_SIZE)
+	)
+	var to_grid := Vector2i(
+		int(target_pos.x / TILE_SIZE),
+		int(target_pos.y / TILE_SIZE)
+	)
+
+	# Get path from AStar
+	current_path = astar.get_point_path(from_grid, to_grid)
+
+	# Pre-smooth the path
+	if path_smoothing_enabled and current_path.size() > 2:
+		current_path = _smooth_path(current_path)
+
+	path_index = 0
+
+	if current_path.size() > 0:
+		current_state = State.HAULING
+	else:
+		# No path found
+		_cancel_hauling()
+
 ## Follow path while in HAULING state
 func _follow_path_hauling(speed_mult: float) -> void:
 	var result := _follow_path_step(speed_mult)
 	match result:
 		PathResult.ARRIVED:
-			# Check what we arrived at: container or ground item (US-006)
+			# Check what we arrived at: container, ground item (US-006), or station output (US-007)
 			if target_ground_item != null:
 				_on_arrived_at_ground_item()
+			elif target_station_output != null:
+				_on_arrived_at_station_output()
 			else:
 				_on_arrived_at_container()
 		PathResult.STUCK:
@@ -982,6 +1018,88 @@ func _pick_up_ground_item(item: ItemEntity) -> void:
 	add_child(item)
 	item.position = Vector2.ZERO  # Hide at agent's position
 
+## Called when agent arrives at a station to pick up output items (US-007)
+func _on_arrived_at_station_output() -> void:
+	if target_station_output == null or items_to_gather.is_empty():
+		_cancel_hauling()
+		return
+
+	var needed := items_to_gather[0]
+	var tag: String = needed["tag"]
+
+	# Find the item in the station's output slots
+	var output_items := target_station_output.get_available_output_items_by_tag(tag)
+	var item: ItemEntity = null
+
+	# First check unreserved items
+	if not output_items.is_empty():
+		item = output_items[0]
+	else:
+		# Check for items reserved by us
+		if current_job != null:
+			var all_output := target_station_output.get_all_output_items()
+			for output_item in all_output:
+				if output_item.item_tag == tag and output_item.is_reserved() and output_item.reserved_by == self:
+					item = output_item
+					break
+
+	if item == null:
+		# Item no longer available, try to find another source
+		print("[NPC ", npc_id, "] Station output item not found, looking for another")
+		target_station_output = null
+		if not _start_gathering_next_item():
+			_cancel_hauling()
+		return
+
+	# Pick up the item from station output
+	print("[NPC ", npc_id, "] Picking up station output item: ", item.item_tag)
+	_pick_up_station_output(item)
+
+	# Check if we need more of this item
+	var quantity_needed: int = needed["quantity"]
+	var held_count := 0
+	for held_item in held_items:
+		if held_item.item_tag == tag:
+			held_count += 1
+
+	if held_count >= quantity_needed:
+		# Got enough of this item, move to next requirement
+		items_to_gather.remove_at(0)
+
+	# Continue gathering
+	target_station_output = null
+	_start_gathering_next_item()
+
+## Pick up an item from a station's output slot (US-007)
+## Removes from station, changes location to IN_HAND, adds to held_items
+func _pick_up_station_output(item: ItemEntity) -> void:
+	if not is_instance_valid(item) or target_station_output == null:
+		return
+
+	# Find which output slot the item is in and remove it
+	var all_output := target_station_output.get_all_output_items()
+	for slot_index in range(target_station_output.get_output_slot_count()):
+		var slot_item := target_station_output.get_output_item(slot_index)
+		if slot_item == item:
+			target_station_output.remove_output_item(slot_index)
+			break
+
+	# Set item state to IN_HAND
+	item.pick_up(self)
+
+	# Add to held items
+	held_items.append(item)
+
+	# Add to job's gathered items if we have a job
+	if current_job != null:
+		current_job.add_gathered_item(item)
+
+	# Reparent from station to agent
+	if item.get_parent() != null:
+		item.get_parent().remove_child(item)
+	add_child(item)
+	item.position = Vector2.ZERO  # Hide at agent's position
+
 ## Pick up an item from a container
 func _pick_up_item(item: ItemEntity) -> void:
 	if not is_instance_valid(item):
@@ -1038,6 +1156,7 @@ func _cancel_hauling() -> void:
 	items_to_gather.clear()
 	target_container = null
 	target_ground_item = null  # US-006: Clear ground item target
+	target_station_output = null  # US-007: Clear station output target
 	current_state = State.IDLE
 
 ## Drop an item at the current position

@@ -27,6 +27,7 @@ TESTS=(
     "test_ground_items"
     "test_find_item_source"
     "test_ground_item_hauling"
+    "test_station_output_hauling"
 )
 
 total_passed=0
