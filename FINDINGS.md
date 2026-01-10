@@ -1,0 +1,2 @@
+Analyzing job completion inconsistencies
+It’s interesting that _finish_job applied motive effects and consumes items without outputting new ones, unlike JobBoard.complete_job, which spawns output items. This creates two separate completion pipelines, causing potential duplication and inconsistency. It might be worth unifying the two processes for clarity and better behavior. Additionally, item reservations are handled well, but tests versus runtime might differ based on how NPCs complete jobs. There's some ambiguity to resolve here.

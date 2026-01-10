@@ -1,0 +1,82 @@
+{
+  "project": "SimGodot",
+  "branchName": "ralph/unified-job-completion",
+  "description": "Unify job completion pipeline - delegate all completion logic to JobBoard.complete_job(), spawn recipe outputs. Tool handling deferred to future work.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Ensure JobBoard._spawn_outputs places items correctly",
+      "description": "As a developer, I want _spawn_outputs to reliably place output items at station output slots or on the ground near the station.",
+      "acceptanceCriteria": [
+        "_spawn_outputs checks station.place_output_item() for each output",
+        "If station has no output slots or they're full, item is placed at station.global_position",
+        "Output items are added to the level node scene tree",
+        "Item state is set based on tag (e.g., 'cooked' in tag sets COOKED state)",
+        "Existing tests in test_jobboard.gd still pass"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "This is in scripts/job_board.gd around line 315. Check that items are properly instantiated and added to scene."
+    },
+    {
+      "id": "US-002",
+      "title": "Refactor NPC._finish_job to delegate to JobBoard.complete_job",
+      "description": "As a developer, I want _finish_job to delegate all completion logic to JobBoard so there is one authoritative completion pipeline.",
+      "acceptanceCriteria": [
+        "_finish_job gets JobBoard reference via get_node('/root/Main/JobBoard')",
+        "_finish_job calls job_board.complete_job(current_job, self, target_station)",
+        "_finish_job no longer applies motive effects directly (remove the motive_effects loop)",
+        "_finish_job no longer handles item consumption (remove queue_free calls on items)",
+        "_finish_job still clears held_items array after complete_job returns",
+        "_finish_job still releases station reservation",
+        "_finish_job still sets current_job = null and current_state = State.IDLE",
+        "Existing tests still pass"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "This is in scripts/npc.gd around line 1289. Remove the duplicated logic but keep local state cleanup."
+    },
+    {
+      "id": "US-003",
+      "title": "Remove motive_effects from cook_simple_meal recipe",
+      "description": "As a content author, I want the cooking recipe to NOT satisfy hunger directly so that only eating satisfies hunger.",
+      "acceptanceCriteria": [
+        "resources/recipes/cook_simple_meal.tres has motive_effects = {}",
+        "The outputs array still contains cooked_meal",
+        "Recipe still has all steps defined"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Simple resource file edit. The motive satisfaction moves to the consumption recipe."
+    },
+    {
+      "id": "US-004",
+      "title": "Remove tools requirement from watch_tv recipe",
+      "description": "As a developer, I want to remove the remote tool requirement from watch_tv since tool handling is deferred to future work.",
+      "acceptanceCriteria": [
+        "resources/recipes/watch_tv.tres has tools = []",
+        "Recipe still has all steps defined",
+        "Recipe still has motive_effects for fun"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Tool handling is a bigger subject - defer to future PRD. For now, remove the requirement so watch_tv works without tools."
+    },
+    {
+      "id": "US-005",
+      "title": "Create eat_snack consumption recipe",
+      "description": "As a developer, I want a consumption recipe that demonstrates eating satisfies hunger by consuming a cooked_meal.",
+      "acceptanceCriteria": [
+        "New file resources/recipes/eat_snack.tres exists",
+        "Recipe has inputs = [{'item_tag': 'cooked_meal', 'quantity': 1, 'consumed': true}]",
+        "Recipe has steps = [] (no station required, instant consumption)",
+        "Recipe has outputs = [] (nothing produced)",
+        "Recipe has motive_effects = {'hunger': 50.0}",
+        "Recipe has recipe_name = 'Eat Snack'"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Model after existing recipes like use_toilet.tres. This recipe needs no steps since eating can happen anywhere."
+    }
+  ]
+}

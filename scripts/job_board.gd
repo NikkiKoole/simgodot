@@ -331,9 +331,9 @@ func _spawn_outputs(recipe: Recipe, station: Station) -> void:
 			if slot_index >= 0:
 				station.place_output_item(item, slot_index)
 			else:
-				# No empty output slot, place as child of station on ground
+				# No empty output slot, place on ground at station position
 				station.add_child(item)
-				item.position = Vector2.ZERO
+				item.global_position = station.global_position
 				item.set_location(ItemEntity.ItemLocation.ON_GROUND)
 
 
