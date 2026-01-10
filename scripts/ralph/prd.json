@@ -92,7 +92,7 @@
         "test_reserve_prevents_double_claim: Second NPC cannot reserve already-reserved ground item"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Reservation already works on ItemEntity - just need to find items from more sources."
     },
     {

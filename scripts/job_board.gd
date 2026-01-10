@@ -57,8 +57,14 @@ func get_available_jobs_for_motive(motive_name: String) -> Array[Job]:
 
 ## Claim a job for an agent
 ## Returns true if claim successful, false otherwise
-## If containers are provided, also reserves all required items
-func claim_job(job: Job, agent: Node, containers: Array = []) -> bool:
+## If containers/stations/level are provided, also reserves all required items
+## Parameters:
+##   job: The job to claim
+##   agent: The agent claiming the job
+##   containers: Optional array of ItemContainer nodes to reserve from
+##   stations: Optional array of Station nodes to check output slots
+##   level: Optional Level node to check ground items
+func claim_job(job: Job, agent: Node, containers: Array = [], stations: Array = [], level: Node = null) -> bool:
 	if job == null or agent == null:
 		return false
 
@@ -67,14 +73,21 @@ func claim_job(job: Job, agent: Node, containers: Array = []) -> bool:
 
 	var claimed := job.claim(agent)
 	if claimed:
-		# Reserve required items from containers
-		if containers.size() > 0 and job.recipe != null:
-			_reserve_items_for_job(job, agent, containers)
+		# Reserve required items from all sources
+		if (containers.size() > 0 or stations.size() > 0 or level != null) and job.recipe != null:
+			_reserve_items_for_job(job, agent, containers, stations, level)
 		job_claimed.emit(job, agent)
 	return claimed
 
-## Reserve all required items for a job from available containers
-func _reserve_items_for_job(job: Job, agent: Node, containers: Array) -> void:
+## Reserve all required items for a job from available sources
+## Priority order: containers first, then station outputs, then ground items
+## Parameters:
+##   job: The job to reserve items for
+##   agent: The agent claiming the items
+##   containers: Array of ItemContainer nodes
+##   stations: Optional array of Station nodes to check output slots
+##   level: Optional Level node to check ground items
+func _reserve_items_for_job(job: Job, agent: Node, containers: Array, stations: Array = [], level: Node = null) -> void:
 	var recipe: Recipe = job.recipe
 
 	# Reserve input items
@@ -83,7 +96,10 @@ func _reserve_items_for_job(job: Job, agent: Node, containers: Array) -> void:
 		var quantity_needed: int = input_data.quantity
 		var quantity_reserved: int = 0
 
+		# 1. First, try containers (highest priority)
 		for container in containers:
+			if quantity_reserved >= quantity_needed:
+				break
 			if container is ItemContainer:
 				var available_items: Array[ItemEntity] = container.get_available_items_by_tag(tag)
 				for item in available_items:
@@ -92,19 +108,67 @@ func _reserve_items_for_job(job: Job, agent: Node, containers: Array) -> void:
 					if item.reserve_item(agent):
 						job.add_gathered_item(item)
 						quantity_reserved += 1
+
+		# 2. Then, try station output slots
+		for station in stations:
+			if quantity_reserved >= quantity_needed:
+				break
+			if station is Station:
+				var output_items: Array[ItemEntity] = station.get_available_output_items_by_tag(tag)
+				for item in output_items:
+					if quantity_reserved >= quantity_needed:
+						break
+					if item.reserve_item(agent):
+						job.add_gathered_item(item)
+						quantity_reserved += 1
+
+		# 3. Finally, try ground items (lowest priority)
+		if quantity_reserved < quantity_needed and level != null and level.has_method("get_ground_items_by_tag"):
+			var ground_items: Array[ItemEntity] = level.get_ground_items_by_tag(tag)
+			for item in ground_items:
 				if quantity_reserved >= quantity_needed:
 					break
+				if item.reserve_item(agent):
+					job.add_gathered_item(item)
+					quantity_reserved += 1
 
-	# Reserve tools
+	# Reserve tools (same priority order)
 	for tool_tag in recipe.tools:
+		var tool_reserved := false
+
+		# 1. First, try containers
 		for container in containers:
+			if tool_reserved:
+				break
 			if container is ItemContainer:
 				var available_items: Array[ItemEntity] = container.get_available_items_by_tag(tool_tag)
 				if available_items.size() > 0:
 					var tool_item: ItemEntity = available_items[0]
 					if tool_item.reserve_item(agent):
 						job.add_gathered_item(tool_item)
+						tool_reserved = true
+
+		# 2. Then, try station output slots
+		if not tool_reserved:
+			for station in stations:
+				if tool_reserved:
 					break
+				if station is Station:
+					var output_items: Array[ItemEntity] = station.get_available_output_items_by_tag(tool_tag)
+					if output_items.size() > 0:
+						var tool_item: ItemEntity = output_items[0]
+						if tool_item.reserve_item(agent):
+							job.add_gathered_item(tool_item)
+							tool_reserved = true
+
+		# 3. Finally, try ground items
+		if not tool_reserved and level != null and level.has_method("get_ground_items_by_tag"):
+			var ground_items: Array[ItemEntity] = level.get_ground_items_by_tag(tool_tag)
+			if ground_items.size() > 0:
+				var tool_item: ItemEntity = ground_items[0]
+				if tool_item.reserve_item(agent):
+					job.add_gathered_item(tool_item)
+					tool_reserved = true
 
 ## Release a job, returning it to POSTED state
 func release_job(job: Job) -> void:

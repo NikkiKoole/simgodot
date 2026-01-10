@@ -58,3 +58,16 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Order of item discovery: containers first, then station outputs, then ground items
   - Tools are also searched in station outputs and ground items (not just containers)
 ---
+
+## 2026-01-10 - US-004
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Extended JobBoard._reserve_items_for_job() and claim_job() to reserve items from all sources (containers, station outputs, ground items)
+- Files changed:
+  - scripts/job_board.gd: Modified _reserve_items_for_job() to accept optional stations and level parameters, reserve from all sources with priority order (containers > stations > ground). Updated claim_job() to pass new parameters.
+  - scripts/tests/test_jobboard.gd: Added 6 new test cases for US-004 (38 assertions): test_reserve_from_container, test_reserve_from_ground, test_reserve_from_station_output, test_reserve_prefers_container, test_reserve_multiple_sources, test_reserve_prevents_double_claim
+- **Learnings for future iterations:**
+  - claim_job() now accepts optional 4th and 5th parameters: `stations: Array = []` and `level: Node = null`
+  - _reserve_items_for_job() uses same priority order as can_start_job(): containers first, then station outputs, then ground items
+  - GDScript type inference with `:=` fails when calling methods with multiple optional parameters - use explicit `var claimed: bool = board.claim_job(...)` instead
+  - Reservation prevents double-claiming: item.reserve_item(agent) returns false if already reserved by another agent
+---

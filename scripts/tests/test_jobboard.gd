@@ -40,6 +40,12 @@ func run_tests() -> void:
 	await test_can_start_excludes_reserved_from_all_sources()
 	await test_can_start_partial_sources()
 	test_can_start_container_items_unchanged()
+	test_reserve_from_container()
+	test_reserve_from_ground()
+	test_reserve_from_station_output()
+	test_reserve_prefers_container()
+	test_reserve_multiple_sources()
+	test_reserve_prevents_double_claim()
 	test_interrupt_job()
 	test_interrupt_job_signal()
 	test_interrupt_job_preserves_step_index()
@@ -940,6 +946,306 @@ func test_can_start_container_items_unchanged() -> void:
 	assert_array_size(result.missing_items, 0, "No missing items")
 
 	station.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+
+# ============================================================================
+# _reserve_items_for_job() tests (US-004)
+# ============================================================================
+
+func test_reserve_from_container() -> void:
+	test("reserve_items_for_job from container (US-004 backward compat)")
+	var board = _create_job_board()
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	# Create recipe requiring 2 raw_food
+	var recipe := _create_recipe_with_inputs("Cooking",
+		[{"tag": "raw_food", "quantity": 2}],
+		["knife"],
+		["counter"]
+	)
+
+	# Create container with items
+	var container := _create_container()
+	var food1 := _create_item("raw_food")
+	var food2 := _create_item("raw_food")
+	var knife := _create_item("knife")
+	container.add_item(food1)
+	container.add_item(food2)
+	container.add_item(knife)
+
+	var station := _create_station("counter")
+
+	var job: Job = board.post_job(recipe, 1)
+
+	# Claim with containers (existing behavior)
+	var claimed: bool = board.claim_job(job, agent, [container])
+	assert_true(claimed, "Job should be claimed")
+
+	# Items should be reserved
+	assert_true(food1.is_reserved(), "food1 should be reserved")
+	assert_true(food2.is_reserved(), "food2 should be reserved")
+	assert_true(knife.is_reserved(), "knife should be reserved")
+
+	# Items should be in gathered_items
+	assert_eq(job.gathered_items.size(), 3, "Should have 3 gathered items")
+	assert_array_contains(job.gathered_items, food1, "food1 should be gathered")
+	assert_array_contains(job.gathered_items, food2, "food2 should be gathered")
+	assert_array_contains(job.gathered_items, knife, "knife should be gathered")
+
+	agent.queue_free()
+	station.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_reserve_from_ground() -> void:
+	test("reserve_items_for_job from ground (US-004)")
+	var board = _create_job_board()
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	# Create recipe requiring 1 raw_food
+	var recipe := _create_recipe_with_inputs("Cooking",
+		[{"tag": "raw_food", "quantity": 1}],
+		[],
+		["counter"]
+	)
+
+	# Create empty container
+	var container := _create_container()
+
+	# Create mock level with ground item
+	var level := _create_mock_level()
+	var ground_item := _create_item("raw_food")
+	level.add_ground_item(ground_item)
+
+	var station := _create_station("counter")
+
+	var job: Job = board.post_job(recipe, 1)
+
+	# Claim with level (should reserve ground item)
+	var claimed: bool = board.claim_job(job, agent, [container], [station], level)
+	assert_true(claimed, "Job should be claimed")
+
+	# Ground item should be reserved
+	assert_true(ground_item.is_reserved(), "Ground item should be reserved")
+	assert_eq(ground_item.reserved_by, agent, "Ground item should be reserved by agent")
+
+	# Item should be in gathered_items
+	assert_eq(job.gathered_items.size(), 1, "Should have 1 gathered item")
+	assert_array_contains(job.gathered_items, ground_item, "ground_item should be gathered")
+
+	agent.queue_free()
+	level.queue_free()
+	station.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_reserve_from_station_output() -> void:
+	test("reserve_items_for_job from station output (US-004)")
+	var board = _create_job_board()
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	# Create recipe requiring 1 cooked_meal
+	var recipe := _create_recipe_with_inputs("Eating",
+		[{"tag": "cooked_meal", "quantity": 1}],
+		[],
+		["counter"]
+	)
+
+	# Create empty container
+	var container := _create_container()
+
+	# Create station with output item
+	var stove := _create_station_with_slots("stove", 1)
+	var output_item := _create_item("cooked_meal")
+	stove.place_output_item(output_item, 0)
+
+	var counter := _create_station("counter")
+
+	var job: Job = board.post_job(recipe, 1)
+
+	# Claim with stations (should reserve from output slot)
+	var claimed: bool = board.claim_job(job, agent, [container], [stove, counter])
+	assert_true(claimed, "Job should be claimed")
+
+	# Output item should be reserved
+	assert_true(output_item.is_reserved(), "Output item should be reserved")
+	assert_eq(output_item.reserved_by, agent, "Output item should be reserved by agent")
+
+	# Item should be in gathered_items
+	assert_eq(job.gathered_items.size(), 1, "Should have 1 gathered item")
+	assert_array_contains(job.gathered_items, output_item, "output_item should be gathered")
+
+	agent.queue_free()
+	stove.queue_free()
+	counter.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_reserve_prefers_container() -> void:
+	test("reserve_items_for_job prefers container over ground (US-004)")
+	var board = _create_job_board()
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	# Create recipe requiring 1 raw_food
+	var recipe := _create_recipe_with_inputs("Cooking",
+		[{"tag": "raw_food", "quantity": 1}],
+		[],
+		["counter"]
+	)
+
+	# Create container with item
+	var container := _create_container()
+	var container_item := _create_item("raw_food")
+	container.add_item(container_item)
+
+	# Create station with output item (same tag)
+	var stove := _create_station_with_slots("stove", 1)
+	var station_item := _create_item("raw_food")
+	stove.place_output_item(station_item, 0)
+
+	# Create mock level with ground item (same tag)
+	var level := _create_mock_level()
+	var ground_item := _create_item("raw_food")
+	level.add_ground_item(ground_item)
+
+	var counter := _create_station("counter")
+
+	var job: Job = board.post_job(recipe, 1)
+
+	# Claim with all sources
+	var claimed: bool = board.claim_job(job, agent, [container], [stove, counter], level)
+	assert_true(claimed, "Job should be claimed")
+
+	# Only container item should be reserved (highest priority)
+	assert_true(container_item.is_reserved(), "Container item should be reserved")
+	assert_false(station_item.is_reserved(), "Station item should NOT be reserved")
+	assert_false(ground_item.is_reserved(), "Ground item should NOT be reserved")
+
+	# Only 1 item should be gathered
+	assert_eq(job.gathered_items.size(), 1, "Should have 1 gathered item")
+	assert_array_contains(job.gathered_items, container_item, "container_item should be gathered")
+
+	agent.queue_free()
+	level.queue_free()
+	stove.queue_free()
+	counter.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_reserve_multiple_sources() -> void:
+	test("reserve_items_for_job from multiple sources (US-004)")
+	var board = _create_job_board()
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	# Create recipe requiring 3 raw_food
+	var recipe := _create_recipe_with_inputs("Big Cooking",
+		[{"tag": "raw_food", "quantity": 3}],
+		[],
+		["counter"]
+	)
+
+	# Put 1 item in container
+	var container := _create_container()
+	var container_item := _create_item("raw_food")
+	container.add_item(container_item)
+
+	# Put 1 item in station output
+	var stove := _create_station_with_slots("stove", 1)
+	var station_item := _create_item("raw_food")
+	stove.place_output_item(station_item, 0)
+
+	# Put 1 item on ground
+	var level := _create_mock_level()
+	var ground_item := _create_item("raw_food")
+	level.add_ground_item(ground_item)
+
+	var counter := _create_station("counter")
+
+	var job: Job = board.post_job(recipe, 1)
+
+	# Claim with all sources (need 3 items total from all sources)
+	var claimed: bool = board.claim_job(job, agent, [container], [stove, counter], level)
+	assert_true(claimed, "Job should be claimed")
+
+	# All items should be reserved (1 from each source to make 3)
+	assert_true(container_item.is_reserved(), "Container item should be reserved")
+	assert_true(station_item.is_reserved(), "Station item should be reserved")
+	assert_true(ground_item.is_reserved(), "Ground item should be reserved")
+
+	# All 3 items should be gathered
+	assert_eq(job.gathered_items.size(), 3, "Should have 3 gathered items")
+	assert_array_contains(job.gathered_items, container_item, "container_item should be gathered")
+	assert_array_contains(job.gathered_items, station_item, "station_item should be gathered")
+	assert_array_contains(job.gathered_items, ground_item, "ground_item should be gathered")
+
+	agent.queue_free()
+	level.queue_free()
+	stove.queue_free()
+	counter.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_reserve_prevents_double_claim() -> void:
+	test("reserve_items_for_job prevents double claim of same item (US-004)")
+	var board = _create_job_board()
+	var agent1 := Node.new()
+	var agent2 := Node.new()
+	test_area.add_child(agent1)
+	test_area.add_child(agent2)
+
+	# Create recipe requiring 1 raw_food
+	var recipe := _create_recipe_with_inputs("Cooking",
+		[{"tag": "raw_food", "quantity": 1}],
+		[],
+		["counter"]
+	)
+
+	# Create mock level with only 1 ground item
+	var level := _create_mock_level()
+	var ground_item := _create_item("raw_food")
+	level.add_ground_item(ground_item)
+
+	var container := _create_container()
+	var counter := _create_station("counter")
+
+	# Post two jobs
+	var job1: Job = board.post_job(recipe, 1)
+	var job2: Job = board.post_job(recipe, 1)
+
+	# Agent1 claims first job (reserves the ground item)
+	var claimed1: bool = board.claim_job(job1, agent1, [container], [counter], level)
+	assert_true(claimed1, "Job1 should be claimed")
+	assert_true(ground_item.is_reserved(), "Ground item should be reserved by agent1")
+	assert_eq(ground_item.reserved_by, agent1, "Ground item reserved_by should be agent1")
+	assert_eq(job1.gathered_items.size(), 1, "Job1 should have 1 gathered item")
+
+	# Agent2 claims second job (cannot reserve the same item)
+	var claimed2: bool = board.claim_job(job2, agent2, [container], [counter], level)
+	assert_true(claimed2, "Job2 should be claimed (job claim succeeds)")
+
+	# But agent2 should NOT have gathered the reserved item
+	assert_eq(job2.gathered_items.size(), 0, "Job2 should have 0 gathered items (item was already reserved)")
+
+	# Ground item should still be reserved by agent1
+	assert_true(ground_item.is_reserved(), "Ground item should still be reserved")
+	assert_eq(ground_item.reserved_by, agent1, "Ground item should still be reserved by agent1")
+
+	agent1.queue_free()
+	agent2.queue_free()
+	level.queue_free()
+	counter.queue_free()
 	container.queue_free()
 	_cleanup_job_board(board)
 
