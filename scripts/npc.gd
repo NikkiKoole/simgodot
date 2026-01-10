@@ -1293,49 +1293,19 @@ func _finish_job() -> void:
 		current_state = State.IDLE
 		return
 
-	# Apply motive effects from recipe
-	if current_job.recipe != null:
-		print("[NPC ", npc_id, "] Applying motive effects from recipe: ", current_job.recipe.motive_effects)
-		for motive_name in current_job.recipe.motive_effects:
-			var effect: float = current_job.recipe.motive_effects[motive_name]
-			# Convert motive name to MotiveType if possible
-			var motive_type := _motive_name_to_type(motive_name)
-			if motive_type >= 0:
-				motives.fulfill(motive_type, effect)
-
-	# Handle item cleanup: tools are preserved, everything else is consumed
-	# Tools can be identified by matching tool tags from recipe
-	# All other items (transformed inputs, outputs) are consumed for motive satisfaction
-	if current_job.recipe != null:
-		var tool_tags := current_job.recipe.tools
-		var items_to_consume: Array[ItemEntity] = []
-		var items_to_preserve: Array[ItemEntity] = []
-
-		for item in held_items:
-			if not is_instance_valid(item):
-				continue
-			if tool_tags.has(item.item_tag):
-				# Tool - preserve it (drop back to world)
-				items_to_preserve.append(item)
-			else:
-				# Non-tool item - consume it
-				items_to_consume.append(item)
-
-		# Consume non-tool items
-		for item in items_to_consume:
-			remove_held_item(item)
-			item.queue_free()
-
-		# Drop tools back to world for reuse
-		for item in items_to_preserve:
-			_drop_item(item)
+	# Delegate completion logic to JobBoard singleton
+	# JobBoard handles: motive effects, item consumption, output spawning
+	var job_board := get_node_or_null("/root/JobBoard")
+	if job_board != null:
+		var result: bool = job_board.complete_job(current_job, self, target_station)
+		if not result:
+			# Fallback: complete the job directly if JobBoard couldn't
+			current_job.complete()
 	else:
-		# No recipe - just drop everything
-		var remaining := held_items.duplicate()
-		for item in remaining:
-			if is_instance_valid(item):
-				_drop_item(item)
+		# Fallback if JobBoard not available (e.g., in tests without full scene)
+		current_job.complete()
 
+	# Clear held items (JobBoard handles consumption, but NPC clears its reference)
 	held_items.clear()
 
 	# Release station if still reserved
@@ -1344,10 +1314,8 @@ func _finish_job() -> void:
 			target_station.release()
 		target_station = null
 
-	# Complete the job
-	current_job.complete()
+	# Clear job reference and go idle
 	current_job = null
-
 	current_state = State.IDLE
 
 ## Cancel working and release resources

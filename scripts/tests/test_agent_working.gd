@@ -6,6 +6,7 @@ const NPCScene = preload("res://scenes/npc.tscn")
 const ItemEntityScene = preload("res://scenes/objects/item_entity.tscn")
 const ContainerScene = preload("res://scenes/objects/container.tscn")
 const StationScene = preload("res://scenes/objects/station.tscn")
+const JobBoardScript = preload("res://scripts/job_board.gd")
 
 var test_area: Node2D
 
@@ -13,6 +14,25 @@ func _ready() -> void:
 	_test_name = "Agent Working"
 	test_area = $TestArea
 	super._ready()
+
+## Helper to create a JobBoard at /root/JobBoard (matching autoload path)
+## Returns the JobBoard node for cleanup
+func _setup_job_board() -> Node:
+	# Remove any existing test JobBoard first to avoid conflicts
+	var existing := get_node_or_null("/root/JobBoard")
+	if existing != null and not existing.get_meta("is_autoload", false):
+		existing.free()
+
+	var job_board := JobBoardScript.new()
+	job_board.name = "JobBoard"
+	get_tree().root.add_child(job_board)
+
+	return job_board
+
+## Helper to clean up the test JobBoard
+func _cleanup_job_board(job_board: Node) -> void:
+	if job_board != null and is_instance_valid(job_board):
+		job_board.free()
 
 func run_tests() -> void:
 	_log_header()
@@ -29,6 +49,13 @@ func run_tests() -> void:
 	test_cancel_working()
 	test_is_working()
 	test_tools_preserved_on_completion()
+	# US-002: _finish_job delegates to JobBoard tests
+	test_finish_job_delegates_to_jobboard()
+	test_finish_job_clears_held_items()
+	test_finish_job_releases_station()
+	test_finish_job_clears_current_job()
+	test_finish_job_sets_idle_state()
+	test_finish_job_motive_applied_via_jobboard()
 	_log_summary()
 
 func test_npc_has_working_state() -> void:
@@ -324,7 +351,10 @@ func test_job_completion() -> void:
 	npc.queue_free()
 
 func test_motive_effects_applied() -> void:
-	test("Motive effects applied on job completion")
+	test("Motive effects applied on job completion via JobBoard")
+
+	# Set up JobBoard at /root/JobBoard
+	var job_board := _setup_job_board()
 
 	var npc = NPCScene.instantiate()
 	test_area.add_child(npc)
@@ -342,18 +372,20 @@ func test_motive_effects_applied() -> void:
 	step.duration = 1.0
 	recipe.add_step(step)
 
-	var job := Job.new(recipe, 1)
-	job.claim(npc)
+	# Post and claim job through JobBoard
+	var job: Job = job_board.post_job(recipe, 1)
+	job_board.claim_job(job, npc)
 	job.start()
 	npc.current_job = job
 
-	# Complete the job
+	# Complete the job via NPC._finish_job (which delegates to JobBoard)
 	npc._finish_job()
 
 	var final_hunger: float = npc.motives.get_value(Motive.MotiveType.HUNGER)
 	assert_true(final_hunger > initial_hunger, "Hunger should increase after job completion")
 
 	npc.queue_free()
+	_cleanup_job_board(job_board)
 
 func test_cancel_working() -> void:
 	test("_cancel_working releases resources")
@@ -413,7 +445,10 @@ func test_is_working() -> void:
 	npc.queue_free()
 
 func test_tools_preserved_on_completion() -> void:
-	test("Tools are preserved on job completion, non-tools consumed")
+	test("Tools are preserved on job completion, non-tools consumed via JobBoard")
+
+	# Set up JobBoard at /root/JobBoard
+	var job_board := _setup_job_board()
 
 	var npc = NPCScene.instantiate()
 	test_area.add_child(npc)
@@ -421,7 +456,7 @@ func test_tools_preserved_on_completion() -> void:
 
 	# Create a food item (should be consumed)
 	var food_item: ItemEntity = ItemEntityScene.instantiate()
-	food_item.item_tag = "cooked_food"
+	food_item.item_tag = "raw_food"
 	test_area.add_child(food_item)
 
 	# Create a tool item (should be preserved)
@@ -445,23 +480,267 @@ func test_tools_preserved_on_completion() -> void:
 	step.duration = 1.0
 	recipe.add_step(step)
 
-	var job := Job.new(recipe, 1)
-	job.claim(npc)
+	# Post and claim job through JobBoard
+	var job: Job = job_board.post_job(recipe, 1)
+	job_board.claim_job(job, npc)
 	job.start()
 	npc.current_job = job
 	npc.current_state = npc.State.WORKING
 
-	# Complete the job
+	# Add items to job's gathered_items (JobBoard consumes from gathered_items)
+	job.add_gathered_item(food_item)
+	job.add_gathered_item(tool_item)
+	food_item.reserve_item(npc)
+	tool_item.reserve_item(npc)
+
+	# Complete the job via NPC._finish_job (which delegates to JobBoard)
 	npc._finish_job()
 
 	# Food item should be consumed (queued for deletion)
 	# Note: queue_free() doesn't immediately free, so we check is_queued_for_deletion()
 	assert_true(food_item.is_queued_for_deletion(), "Food item should be queued for deletion")
 
-	# Tool should still exist and be on the ground
+	# Tool should still exist (reservation released)
 	assert_true(is_instance_valid(tool_item), "Tool item should still exist")
-	assert_eq(tool_item.location, ItemEntity.ItemLocation.ON_GROUND, "Tool should be ON_GROUND")
+	assert_false(tool_item.is_reserved(), "Tool reservation should be released")
 	assert_false(npc.held_items.has(tool_item), "Tool should not be in held_items")
 
 	tool_item.queue_free()
 	npc.queue_free()
+	_cleanup_job_board(job_board)
+
+
+# ============================================================================
+# US-002: _finish_job delegates to JobBoard tests
+# ============================================================================
+
+func test_finish_job_delegates_to_jobboard() -> void:
+	test("_finish_job calls JobBoard.complete_job()")
+
+	# Set up JobBoard at /root/JobBoard
+	var job_board := _setup_job_board()
+
+	var npc = NPCScene.instantiate()
+	test_area.add_child(npc)
+	npc.is_initialized = true
+
+	# Create recipe
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Test Recipe"
+	var step := RecipeStep.new()
+	step.station_tag = "counter"
+	step.duration = 1.0
+	recipe.add_step(step)
+
+	# Post and claim job through JobBoard
+	var job: Job = job_board.post_job(recipe, 1)
+	job_board.claim_job(job, npc)
+	job.start()
+	npc.current_job = job
+
+	# Track job completion signal from JobBoard
+	var completed := {"value": false}
+	job_board.job_completed.connect(func(_j): completed["value"] = true)
+
+	# Complete via NPC._finish_job
+	npc._finish_job()
+
+	# JobBoard should have received the complete_job call
+	assert_true(completed["value"], "JobBoard.job_completed signal should be emitted")
+	assert_eq(job.state, Job.JobState.COMPLETED, "Job should be COMPLETED via JobBoard")
+
+	npc.queue_free()
+	_cleanup_job_board(job_board)
+
+
+func test_finish_job_clears_held_items() -> void:
+	test("held_items array is empty after _finish_job")
+
+	# Set up JobBoard at /root/JobBoard
+	var job_board := _setup_job_board()
+
+	var npc = NPCScene.instantiate()
+	test_area.add_child(npc)
+	npc.is_initialized = true
+
+	# Create an item and give to NPC
+	var item: ItemEntity = ItemEntityScene.instantiate()
+	item.item_tag = "test_item"
+	test_area.add_child(item)
+	npc.held_items.append(item)
+
+	# Create and start job
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Test Recipe"
+	var step := RecipeStep.new()
+	step.station_tag = "counter"
+	step.duration = 1.0
+	recipe.add_step(step)
+
+	var job: Job = job_board.post_job(recipe, 1)
+	job_board.claim_job(job, npc)
+	job.start()
+	npc.current_job = job
+
+	# Complete via NPC._finish_job
+	npc._finish_job()
+
+	# held_items should be empty
+	assert_eq(npc.held_items.size(), 0, "held_items should be empty after _finish_job")
+
+	item.queue_free()
+	npc.queue_free()
+	_cleanup_job_board(job_board)
+
+
+func test_finish_job_releases_station() -> void:
+	test("target_station.reserved_by is null after _finish_job")
+
+	# Set up JobBoard at /root/JobBoard
+	var job_board := _setup_job_board()
+
+	var npc = NPCScene.instantiate()
+	test_area.add_child(npc)
+	npc.is_initialized = true
+
+	# Create and reserve station
+	var station: Station = StationScene.instantiate()
+	station.station_tag = "counter"
+	test_area.add_child(station)
+	station.reserve(npc)
+	npc.target_station = station
+
+	# Create and start job
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Test Recipe"
+	var step := RecipeStep.new()
+	step.station_tag = "counter"
+	step.duration = 1.0
+	recipe.add_step(step)
+
+	var job: Job = job_board.post_job(recipe, 1)
+	job_board.claim_job(job, npc)
+	job.start()
+	npc.current_job = job
+
+	# Complete via NPC._finish_job
+	npc._finish_job()
+
+	# Station should be released
+	assert_true(station.is_available(), "Station should be available after _finish_job")
+	assert_null(npc.target_station, "NPC.target_station should be null after _finish_job")
+
+	station.queue_free()
+	npc.queue_free()
+	_cleanup_job_board(job_board)
+
+
+func test_finish_job_clears_current_job() -> void:
+	test("current_job is null after _finish_job")
+
+	# Set up JobBoard at /root/JobBoard
+	var job_board := _setup_job_board()
+
+	var npc = NPCScene.instantiate()
+	test_area.add_child(npc)
+	npc.is_initialized = true
+
+	# Create and start job
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Test Recipe"
+	var step := RecipeStep.new()
+	step.station_tag = "counter"
+	step.duration = 1.0
+	recipe.add_step(step)
+
+	var job: Job = job_board.post_job(recipe, 1)
+	job_board.claim_job(job, npc)
+	job.start()
+	npc.current_job = job
+
+	assert_not_null(npc.current_job, "current_job should be set before _finish_job")
+
+	# Complete via NPC._finish_job
+	npc._finish_job()
+
+	# current_job should be null
+	assert_null(npc.current_job, "current_job should be null after _finish_job")
+
+	npc.queue_free()
+	_cleanup_job_board(job_board)
+
+
+func test_finish_job_sets_idle_state() -> void:
+	test("current_state is State.IDLE after _finish_job")
+
+	# Set up JobBoard at /root/JobBoard
+	var job_board := _setup_job_board()
+
+	var npc = NPCScene.instantiate()
+	test_area.add_child(npc)
+	npc.is_initialized = true
+
+	# Create and start job
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Test Recipe"
+	var step := RecipeStep.new()
+	step.station_tag = "counter"
+	step.duration = 1.0
+	recipe.add_step(step)
+
+	var job: Job = job_board.post_job(recipe, 1)
+	job_board.claim_job(job, npc)
+	job.start()
+	npc.current_job = job
+	npc.current_state = npc.State.WORKING
+
+	assert_eq(npc.current_state, npc.State.WORKING, "State should be WORKING before _finish_job")
+
+	# Complete via NPC._finish_job
+	npc._finish_job()
+
+	# State should be IDLE
+	assert_eq(npc.current_state, npc.State.IDLE, "State should be IDLE after _finish_job")
+
+	npc.queue_free()
+	_cleanup_job_board(job_board)
+
+
+func test_finish_job_motive_applied_via_jobboard() -> void:
+	test("Motive effects applied through JobBoard, not NPC")
+
+	# Set up JobBoard at /root/JobBoard
+	var job_board := _setup_job_board()
+
+	var npc = NPCScene.instantiate()
+	test_area.add_child(npc)
+	npc.is_initialized = true
+
+	# Set initial motive values
+	npc.motives.values[Motive.MotiveType.HUNGER] = 0.0
+	npc.motives.values[Motive.MotiveType.FUN] = -20.0
+
+	# Create recipe with motive effects
+	var recipe := Recipe.new()
+	recipe.recipe_name = "Satisfying Meal"
+	recipe.motive_effects = {"hunger": 50.0, "fun": 30.0}
+	var step := RecipeStep.new()
+	step.station_tag = "counter"
+	step.duration = 1.0
+	recipe.add_step(step)
+
+	# Post and claim job through JobBoard
+	var job: Job = job_board.post_job(recipe, 1)
+	job_board.claim_job(job, npc)
+	job.start()
+	npc.current_job = job
+
+	# Complete via NPC._finish_job (which delegates to JobBoard)
+	npc._finish_job()
+
+	# Verify motive effects were applied via JobBoard
+	assert_eq(npc.motives.get_value(Motive.MotiveType.HUNGER), 50.0, "Hunger should increase by 50")
+	assert_eq(npc.motives.get_value(Motive.MotiveType.FUN), 10.0, "Fun should increase by 30 (from -20 to 10)")
+
+	npc.queue_free()
+	_cleanup_job_board(job_board)
