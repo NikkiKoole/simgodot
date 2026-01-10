@@ -45,7 +45,7 @@
         "test_get_output_items_multiple_stations: Works correctly across multiple stations"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Station already has output_slots array. This is a simple filtered query."
     },
     {

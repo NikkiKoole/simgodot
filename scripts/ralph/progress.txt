@@ -13,7 +13,7 @@
 
 ## Key Files for Ground Item Feature
 - scripts/level.gd: Has all_items array and get_ground_items_by_tag() (US-001 complete)
-- scripts/station.gd: Has output_slots, needs get_available_output_items_by_tag()
+- scripts/station.gd: Has output_slots and get_available_output_items_by_tag() (US-002 complete)
 - scripts/job_board.gd: can_start_job() and _reserve_items_for_job() need to check all sources
 - scripts/npc.gd: _find_container_with_item() needs to become _find_item_source()
 - scripts/item_entity.gd: Already has location enum and reservation - no changes needed
@@ -31,4 +31,16 @@
   - GDScript type inference with `:=` fails when the source method is on a dynamically-typed variable (e.g., `level: Node2D`). Use explicit type annotations like `var result: Array[ItemEntity] = level.method()` instead.
   - Level.add_item() returns ItemEntity and automatically sets location to ON_GROUND and adds to all_items array.
   - Test scenes for Level use TestLevel node (empty level with world_map="" and auto_spawn_npcs=false) as parent, with TestRunner as child.
+---
+
+## 2026-01-10 - US-002
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added Station.get_available_output_items_by_tag(tag: String) -> Array[ItemEntity] method
+- Files changed:
+  - scripts/station.gd: Added get_available_output_items_by_tag() method (8 lines)
+  - scripts/tests/test_station.gd: Added 5 test cases for US-002 (18 assertions), also fixed missing `await` on async test calls
+- **Learnings for future iterations:**
+  - Test functions containing `await` must be called with `await` in run_tests() or execution will skip them
+  - Station.output_slot_items is a Dictionary mapping slot_index -> ItemEntity
+  - Simple query methods can iterate output_slot_items.values() directly
 ---
