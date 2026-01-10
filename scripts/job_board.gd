@@ -441,7 +441,8 @@ class JobRequirementResult:
 
 ## Check if a job can be started given available containers and stations
 ## Returns JobRequirementResult with validation details
-func can_start_job(job: Job, containers: Array, stations: Array) -> JobRequirementResult:
+## Optional level parameter allows checking ground items; if null, tries get_tree().current_scene
+func can_start_job(job: Job, containers: Array, stations: Array, level: Node = null) -> JobRequirementResult:
 	if job == null:
 		return JobRequirementResult.new(false, "Job is null")
 
@@ -451,16 +452,34 @@ func can_start_job(job: Job, containers: Array, stations: Array) -> JobRequireme
 	var result := JobRequirementResult.new(true, "")
 	var recipe: Recipe = job.recipe
 
-	# Check required items in containers
+	# Try to get level reference if not provided
+	var level_ref: Node = level
+	if level_ref == null:
+		var tree := get_tree()
+		if tree != null:
+			level_ref = tree.current_scene
+
+	# Check required items in containers, station outputs, and ground
 	for input_data in recipe.get_inputs():
 		var tag: String = input_data.item_tag
 		var quantity_needed: int = input_data.quantity
 		var quantity_found: int = 0
 
-		# Count available items across all containers
+		# Count available items in containers
 		for container in containers:
 			if container is ItemContainer:
 				quantity_found += container.get_available_count(tag)
+
+		# Count available items in station output slots
+		for station in stations:
+			if station is Station:
+				var output_items: Array[ItemEntity] = station.get_available_output_items_by_tag(tag)
+				quantity_found += output_items.size()
+
+		# Count available items on ground (via Level)
+		if level_ref != null and level_ref.has_method("get_ground_items_by_tag"):
+			var ground_items: Array[ItemEntity] = level_ref.get_ground_items_by_tag(tag)
+			quantity_found += ground_items.size()
 
 		if quantity_found < quantity_needed:
 			result.can_start = false
@@ -470,15 +489,31 @@ func can_start_job(job: Job, containers: Array, stations: Array) -> JobRequireme
 				"quantity_found": quantity_found
 			})
 
-	# Check required tools in containers
+	# Check required tools in containers, station outputs, and ground
 	for tool_tag in recipe.tools:
 		var tool_found := false
 
+		# Check containers
 		for container in containers:
 			if container is ItemContainer:
 				if container.has_available_item(tool_tag):
 					tool_found = true
 					break
+
+		# Check station output slots
+		if not tool_found:
+			for station in stations:
+				if station is Station:
+					var output_items: Array[ItemEntity] = station.get_available_output_items_by_tag(tool_tag)
+					if output_items.size() > 0:
+						tool_found = true
+						break
+
+		# Check ground items
+		if not tool_found and level_ref != null and level_ref.has_method("get_ground_items_by_tag"):
+			var ground_items: Array[ItemEntity] = level_ref.get_ground_items_by_tag(tool_tag)
+			if ground_items.size() > 0:
+				tool_found = true
 
 		if not tool_found:
 			result.can_start = false

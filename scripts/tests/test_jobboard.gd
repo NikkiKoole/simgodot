@@ -34,6 +34,12 @@ func run_tests() -> void:
 	test_can_start_job_reserved_items()
 	test_can_start_job_reserved_stations()
 	test_can_start_job_multiple_requirements()
+	await test_can_start_finds_ground_items()
+	await test_can_start_finds_station_output()
+	await test_can_start_combines_sources()
+	await test_can_start_excludes_reserved_from_all_sources()
+	await test_can_start_partial_sources()
+	test_can_start_container_items_unchanged()
 	test_interrupt_job()
 	test_interrupt_job_signal()
 	test_interrupt_job_preserves_step_index()
@@ -649,6 +655,292 @@ func test_can_start_job_multiple_requirements() -> void:
 	stove.queue_free()
 	container.queue_free()
 	container2.queue_free()
+	_cleanup_job_board(board)
+
+
+# ============================================================================
+# can_start_job() tests for ground and station output items (US-003)
+# ============================================================================
+
+## Helper to create a mock level with ground item support
+func _create_mock_level() -> Node2D:
+	var level := MockLevel.new()
+	test_area.add_child(level)
+	return level
+
+
+## Mock level class with ground items support
+class MockLevel extends Node2D:
+	var all_items: Array[ItemEntity] = []
+
+	func add_ground_item(item: ItemEntity) -> void:
+		item.location = ItemEntity.ItemLocation.ON_GROUND
+		all_items.append(item)
+		add_child(item)
+
+	func get_ground_items_by_tag(tag: String) -> Array[ItemEntity]:
+		var result: Array[ItemEntity] = []
+		for item in all_items:
+			if not is_instance_valid(item):
+				continue
+			if item.location != ItemEntity.ItemLocation.ON_GROUND:
+				continue
+			if item.item_tag != tag:
+				continue
+			if item.is_reserved():
+				continue
+			result.append(item)
+		return result
+
+
+func test_can_start_finds_ground_items() -> void:
+	test("can_start_job finds ground items (US-003)")
+	var board = _create_job_board()
+
+	# Create recipe requiring 1 raw_food
+	var recipe := _create_recipe_with_inputs("Cooking",
+		[{"tag": "raw_food", "quantity": 1}],
+		[],
+		["counter"]
+	)
+
+	# Create empty container
+	var container := _create_container()
+
+	# Create station
+	var station := _create_station("counter")
+
+	# Create mock level with ground item
+	var level := _create_mock_level()
+	var ground_item := _create_item("raw_food")
+	level.add_ground_item(ground_item)
+
+	var job: Job = board.post_job(recipe, 1)
+
+	# Without level, should fail (no items in container)
+	var result_no_level = board.can_start_job(job, [container], [station])
+	assert_false(result_no_level.can_start, "Should fail without level (no container items)")
+
+	# With level, should find ground item
+	var result_with_level = board.can_start_job(job, [container], [station], level)
+	assert_true(result_with_level.can_start, "Should succeed when item on ground")
+	assert_array_size(result_with_level.missing_items, 0, "No missing items")
+
+	level.queue_free()
+	station.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_can_start_finds_station_output() -> void:
+	test("can_start_job finds station output items (US-003)")
+	var board = _create_job_board()
+
+	# Create recipe requiring 1 cooked_meal
+	var recipe := _create_recipe_with_inputs("Eating",
+		[{"tag": "cooked_meal", "quantity": 1}],
+		[],
+		["counter"]
+	)
+
+	# Create empty container
+	var container := _create_container()
+
+	# Create station with output item
+	var stove := _create_station_with_slots("stove", 1)
+	var output_item := _create_item("cooked_meal")
+	stove.place_output_item(output_item, 0)
+
+	# Create required counter station
+	var counter := _create_station("counter")
+
+	var job: Job = board.post_job(recipe, 1)
+
+	# Should find item in station output slot
+	var result = board.can_start_job(job, [container], [stove, counter])
+	assert_true(result.can_start, "Should succeed when item in station output slot")
+	assert_array_size(result.missing_items, 0, "No missing items")
+
+	stove.queue_free()
+	counter.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_can_start_combines_sources() -> void:
+	test("can_start_job combines items from all sources (US-003)")
+	var board = _create_job_board()
+
+	# Create recipe requiring 3 raw_food
+	var recipe := _create_recipe_with_inputs("Big Cooking",
+		[{"tag": "raw_food", "quantity": 3}],
+		[],
+		["counter"]
+	)
+
+	# Put 1 item in container
+	var container := _create_container()
+	container.add_item(_create_item("raw_food"))
+
+	# Put 1 item in station output
+	var stove := _create_station_with_slots("stove", 1)
+	var output_item := _create_item("raw_food")
+	stove.place_output_item(output_item, 0)
+
+	# Put 1 item on ground
+	var level := _create_mock_level()
+	var ground_item := _create_item("raw_food")
+	level.add_ground_item(ground_item)
+
+	# Create required counter
+	var counter := _create_station("counter")
+
+	var job: Job = board.post_job(recipe, 1)
+
+	# Should combine items from all three sources (1+1+1=3)
+	var result = board.can_start_job(job, [container], [stove, counter], level)
+	assert_true(result.can_start, "Should succeed when combining items from all sources")
+	assert_array_size(result.missing_items, 0, "No missing items")
+
+	# Test with only 2 sources (should fail, need 3)
+	var result_partial = board.can_start_job(job, [container], [stove, counter])  # No level
+	assert_false(result_partial.can_start, "Should fail with only 2 items from 2 sources")
+	assert_array_size(result_partial.missing_items, 1, "Should have 1 missing item entry")
+	assert_eq(result_partial.missing_items[0].quantity_found, 2, "Should find 2 items")
+	assert_eq(result_partial.missing_items[0].quantity_needed, 3, "Should need 3 items")
+
+	level.queue_free()
+	stove.queue_free()
+	counter.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_can_start_excludes_reserved_from_all_sources() -> void:
+	test("can_start_job excludes reserved items from all sources (US-003)")
+	var board = _create_job_board()
+	var agent := Node.new()
+	test_area.add_child(agent)
+
+	# Create recipe requiring 1 raw_food
+	var recipe := _create_recipe_with_inputs("Cooking",
+		[{"tag": "raw_food", "quantity": 1}],
+		[],
+		["counter"]
+	)
+
+	# Create container with reserved item
+	var container := _create_container()
+	var container_item := _create_item("raw_food")
+	container.add_item(container_item)
+	container_item.reserve_item(agent)
+
+	# Create station with reserved output item
+	var stove := _create_station_with_slots("stove", 1)
+	var output_item := _create_item("raw_food")
+	stove.place_output_item(output_item, 0)
+	output_item.reserve_item(agent)
+
+	# Create ground item that is reserved
+	var level := _create_mock_level()
+	var ground_item := _create_item("raw_food")
+	level.add_ground_item(ground_item)
+	ground_item.reserve_item(agent)
+
+	var counter := _create_station("counter")
+
+	var job: Job = board.post_job(recipe, 1)
+
+	# All items are reserved, should fail
+	var result = board.can_start_job(job, [container], [stove, counter], level)
+	assert_false(result.can_start, "Should fail when all items are reserved")
+	assert_array_size(result.missing_items, 1, "Should have 1 missing item entry")
+	assert_eq(result.missing_items[0].quantity_found, 0, "Should find 0 available items")
+
+	# Release one item, should succeed
+	ground_item.release_item()
+	var result_after_release = board.can_start_job(job, [container], [stove, counter], level)
+	assert_true(result_after_release.can_start, "Should succeed after releasing one item")
+
+	agent.queue_free()
+	level.queue_free()
+	stove.queue_free()
+	counter.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_can_start_partial_sources() -> void:
+	test("can_start_job handles partial items across sources (US-003)")
+	var board = _create_job_board()
+
+	# Create recipe requiring 2 raw_food and 1 knife tool
+	var recipe := _create_recipe_with_inputs("Cooking",
+		[{"tag": "raw_food", "quantity": 2}],
+		["knife"],
+		["counter"]
+	)
+
+	# Put 1 raw_food in container
+	var container := _create_container()
+	container.add_item(_create_item("raw_food"))
+
+	# Put 1 raw_food on ground
+	var level := _create_mock_level()
+	var ground_food := _create_item("raw_food")
+	level.add_ground_item(ground_food)
+
+	# Put knife in station output
+	var stove := _create_station_with_slots("stove", 1)
+	var knife := _create_item("knife")
+	stove.place_output_item(knife, 0)
+
+	var counter := _create_station("counter")
+
+	var job: Job = board.post_job(recipe, 1)
+
+	# Should find 2 raw_food (1 container + 1 ground) and knife in station output
+	var result = board.can_start_job(job, [container], [stove, counter], level)
+	assert_true(result.can_start, "Should succeed with items split across sources")
+	assert_array_size(result.missing_items, 0, "No missing items")
+	assert_array_size(result.missing_tools, 0, "No missing tools")
+
+	level.queue_free()
+	stove.queue_free()
+	counter.queue_free()
+	container.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_can_start_container_items_unchanged() -> void:
+	test("can_start_job container behavior unchanged (US-003 backward compat)")
+	var board = _create_job_board()
+
+	# Create recipe requiring items - same as original test
+	var recipe := _create_recipe_with_inputs("Cooking",
+		[{"tag": "raw_food", "quantity": 1}],
+		[],
+		["counter"]
+	)
+
+	# Create container with the required item
+	var container := _create_container()
+	var item := _create_item("raw_food")
+	container.add_item(item)
+
+	# Create the required station
+	var station := _create_station("counter")
+
+	var job: Job = board.post_job(recipe, 1)
+
+	# Should work exactly as before (no level parameter)
+	var result = board.can_start_job(job, [container], [station])
+	assert_true(result.can_start, "Job should be startable with container items (backward compat)")
+	assert_eq(result.reason, "", "Reason should be empty when can start")
+	assert_array_size(result.missing_items, 0, "No missing items")
+
+	station.queue_free()
+	container.queue_free()
 	_cleanup_job_board(board)
 
 
