@@ -156,3 +156,26 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Existing tests serve as regression tests - no need to duplicate coverage with new test names
   - The test criteria in PRD suggested specific test names but existing tests already covered the same functionality
 ---
+
+## 2026-01-10 - US-010
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: E2E test proving full cook-eat loop with autonomous ground/station item pickup
+- Files changed:
+  - scripts/tests/test_e2e_ground_pickup.gd: New test file with 4 test cases (46 assertions)
+  - scenes/tests/test_e2e_ground_pickup.tscn: New test scene
+  - run_tests.sh: Added test_e2e_ground_pickup to test suite
+  - scripts/npc.gd: Fixed bug in _on_step_complete() - station was released before _finish_job(), preventing output spawning
+  - scripts/tests/test_debug_cooking_scenario.gd: Fixed signal timing issue (connect before start_hauling_for_job)
+- **Test cases:**
+  - test_e2e_cook_eat_autonomous: Full loop - cook raw_food, NPC discovers cooked_meal in station output, eats it, hunger satisfied
+  - test_e2e_station_output_pickup: NPC picks up pre-placed item from station output slot
+  - test_e2e_ground_spawn_pickup: NPC picks up item spawned on ground
+  - test_e2e_multiple_npcs_no_conflict: Two NPCs don't pick up same reserved ground item
+- **Bug fix:** In _on_step_complete(), when job completes (no more steps), the station was being released BEFORE _finish_job() was called. This meant complete_job() received null station and couldn't spawn outputs. Fixed by only releasing station between steps, not when job completes.
+- **Learnings for future iterations:**
+  - For jobs with no steps (like eat_snack), connect to job_completed signal BEFORE calling start_hauling_for_job() - the job may complete immediately
+  - Test scenes using DebugCommands must use the same Level that DebugCommands finds (via "level" group or current_scene), not a separate dynamically created level
+  - Pattern: use `test_level = get_parent()` to get the scene's TestLevel, not create a new one
+  - claim_job() claims the JOB, not the items - reservation prevents hauling, not claiming
+  - All 21 test suites pass (1431 total assertions)
+---

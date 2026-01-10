@@ -223,7 +223,7 @@
         "test_e2e_multiple_npcs_no_conflict: Two NPCs don't claim same ground item"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "This is the key validation. Current test_production_consumption_loop manually moves items - this should work automatically."
     }
   ]
