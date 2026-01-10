@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="Recipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/recipe.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+recipe_name = "Eat Snack"
+inputs = [{
+    "item_tag": "cooked_meal",
+    "quantity": 1,
+    "consumed": true
+}]
+tools = []
+steps = []
+outputs = []
+motive_effects = {
+    "hunger": 50.0
+}

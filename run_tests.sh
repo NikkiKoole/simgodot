@@ -16,6 +16,7 @@ TESTS=(
     "test_agent_working"
     "test_need_jobs"
     "test_recipe_cook"
+    "test_recipe_eat_snack"
     "test_recipe_toilet"
     "test_recipe_tv"
     "test_interruption"
