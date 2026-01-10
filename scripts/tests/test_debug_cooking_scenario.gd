@@ -434,13 +434,13 @@ func test_production_consumption_loop() -> void:
 	var eat_claimed: bool = JobBoard.claim_job(eat_job, npc, typed_containers)
 	assert_true(eat_claimed, "NPC should claim eat job")
 
+	# Connect to job_completed BEFORE starting hauling (eat_snack has no steps, may complete immediately)
+	var eat_completed := {"value": false}
+	eat_job.job_completed.connect(func(): eat_completed["value"] = true)
+
 	# Start hauling for eat job (gathering the cooked_meal)
 	var eat_hauling_started: bool = npc.start_hauling_for_job(eat_job)
 	assert_true(eat_hauling_started, "NPC should start hauling for eat job")
-
-	# Wait for eating to complete
-	var eat_completed := {"value": false}
-	eat_job.job_completed.connect(func(): eat_completed["value"] = true)
 
 	frame_count = 0
 	while not eat_completed["value"] and frame_count < max_frames:

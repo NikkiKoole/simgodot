@@ -28,6 +28,7 @@ TESTS=(
     "test_find_item_source"
     "test_ground_item_hauling"
     "test_station_output_hauling"
+    "test_e2e_ground_pickup"
 )
 
 total_passed=0

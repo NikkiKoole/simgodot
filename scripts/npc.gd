@@ -1560,16 +1560,16 @@ func _on_step_complete() -> void:
 		_stop_animation()
 		current_animation = ""
 
-	# Release current station if we're done with it
-	if target_station != null:
-		# Check if next step uses a different station
-		var next_step_index := current_job.current_step_index + 1
-		var next_step: RecipeStep = null
-		if next_step_index < current_job.get_total_steps():
-			next_step = current_job.recipe.get_step(next_step_index)
+	# Check if there are more steps
+	var next_step_index := current_job.current_step_index + 1
+	var has_more_steps := next_step_index < current_job.get_total_steps()
 
-		# Release station if next step uses different station or no next step
-		if next_step == null or next_step.station_tag != target_station.station_tag:
+	# Release current station if next step uses a different station
+	# BUT keep it if job is complete (so _finish_job can spawn outputs there)
+	if target_station != null and has_more_steps:
+		var next_step: RecipeStep = current_job.recipe.get_step(next_step_index)
+		# Release station if next step uses different station
+		if next_step.station_tag != target_station.station_tag:
 			# Pick up items from station before leaving
 			_pick_up_items_from_station()
 			target_station.release()
@@ -1581,7 +1581,7 @@ func _on_step_complete() -> void:
 		# More steps remaining
 		_start_next_work_step()
 	else:
-		# All steps complete
+		# All steps complete - _finish_job will release station after spawning outputs
 		_finish_job()
 
 ## Apply input_transform from step to items at the station
