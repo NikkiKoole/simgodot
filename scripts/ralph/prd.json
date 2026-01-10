@@ -30,7 +30,7 @@
       "title": "Refactor NPC._finish_job to delegate to JobBoard.complete_job",
       "description": "As a developer, I want _finish_job to delegate all completion logic to JobBoard so there is one authoritative completion pipeline.",
       "acceptanceCriteria": [
-        "_finish_job gets JobBoard reference via get_node('/root/Main/JobBoard')",
+        "_finish_job gets JobBoard reference via get_node('/root/JobBoard')",
         "_finish_job calls job_board.complete_job(current_job, self, target_station)",
         "_finish_job no longer applies motive effects directly (remove the motive_effects loop)",
         "_finish_job no longer handles item consumption (remove queue_free calls on items)",
@@ -48,7 +48,7 @@
         "test_finish_job_motive_applied_via_jobboard: Motive effects applied through JobBoard, not NPC"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "This is in scripts/npc.gd around line 1289. Remove the duplicated logic but keep local state cleanup."
     },
     {

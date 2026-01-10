@@ -1,9 +1,12 @@
 ## Codebase Patterns
 - Tests are in scenes/tests/*.tscn (scenes) and scripts/tests/*.gd (code)
 - Run tests with: "/Users/nikkikoole/Downloads/Godot 3.app/Contents/MacOS/Godot" --headless scenes/tests/test_*.tscn
+- Or run all tests: ./run_tests.sh
 - ItemEntity states: RAW, PREPPED, COOKED, DIRTY, BROKEN
 - Station.place_output_item() adds items as children of station
 - Items falling back to ground use station.global_position for placement
+- JobBoard autoload is at /root/JobBoard (NOT /root/Main/JobBoard)
+- When creating test JobBoards, use free() not queue_free() to avoid stale node conflicts
 
 ---
 
@@ -16,4 +19,19 @@
   - Existing test_complete_job_spawns_outputs already covered most cases
   - Items in output slots become children of the station (intentional design)
   - The "level node scene tree" criterion means items exist in scene tree, not necessarily at level root
+---
+
+## 2026-01-10 - US-002
+- Refactored NPC._finish_job to delegate completion logic to JobBoard.complete_job()
+- Removed duplicated motive effects loop from NPC (now handled by JobBoard)
+- Removed item consumption logic from NPC (now handled by JobBoard)
+- NPC still handles local cleanup: clearing held_items, releasing station, setting IDLE state
+- Added 6 new tests for US-002 in test_agent_working.gd
+- Updated existing tests to use proper JobBoard setup
+- Files changed: scripts/npc.gd, scripts/tests/test_agent_working.gd, scripts/ralph/prd.json
+- **Learnings for future iterations:**
+  - JobBoard autoload is at /root/JobBoard, not /root/Main/JobBoard
+  - Test JobBoards must use free() instead of queue_free() to avoid multiple nodes at same path
+  - GDScript type inference needs explicit type for dynamic method returns (e.g., `var result: bool = ...`)
+  - complete_job() returns false if job not in JobBoard's jobs array - important for testing
 ---
