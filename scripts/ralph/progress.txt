@@ -51,3 +51,15 @@
   - Tests for cooking scenarios assumed hunger satisfaction came from cooking; now it will come from eat_snack recipe
   - GDScript .tres files use simple key-value syntax: `motive_effects = {}` for empty dictionary
 ---
+
+## 2026-01-10 - US-004
+- Removed tools requirement from watch_tv.tres (was tools = ["remote"], now tools = [])
+- Updated test_recipe_tv.gd: renamed tests to US-004 naming convention
+- Simplified test_full_tv_sequence_setup and test_agent_can_execute_full_sequence to not use remote
+- Added test_watch_tv_can_start_without_tools to verify job can start without tool items
+- Files changed: resources/recipes/watch_tv.tres, scripts/tests/test_recipe_tv.gd, scripts/ralph/prd.json
+- **Learnings for future iterations:**
+  - Tool handling is deferred - recipes that previously needed tools can work without them for now
+  - Tests that used tools needed to be simplified to remove container/tool setup
+  - Recipe.has_tools() returns false when tools array is empty
+---

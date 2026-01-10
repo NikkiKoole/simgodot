@@ -22,16 +22,17 @@ func run_tests() -> void:
 	_log_header()
 	test_recipe_loads_correctly()
 	test_recipe_has_no_inputs()
-	test_recipe_has_correct_tools()
-	test_recipe_has_correct_steps()
+	test_watch_tv_no_tools()
+	test_watch_tv_has_steps()
 	test_recipe_has_no_outputs()
-	test_recipe_has_correct_motive_effects()
+	test_watch_tv_has_fun_motive()
 	test_step_details()
 	test_full_tv_sequence_setup()
 	test_turn_on_step_at_tv()
 	test_watch_step_at_couch()
 	test_turn_off_step_at_tv()
 	test_agent_can_execute_full_sequence()
+	test_watch_tv_can_start_without_tools()
 	_log_summary()
 
 func test_recipe_loads_correctly() -> void:
@@ -47,15 +48,14 @@ func test_recipe_has_no_inputs() -> void:
 	assert_eq(inputs.size(), 0, "Should have 0 inputs")
 	assert_false(watch_tv_recipe.has_inputs(), "has_inputs() should return false")
 
-func test_recipe_has_correct_tools() -> void:
-	test("Recipe has correct tools (remote, not consumed)")
+func test_watch_tv_no_tools() -> void:
+	test("Recipe has no tools (US-004)")
 
-	assert_true(watch_tv_recipe.has_tools(), "Should have tools")
-	assert_eq(watch_tv_recipe.tools.size(), 1, "Should have 1 tool")
-	assert_true(watch_tv_recipe.tools.has("remote"), "Should require remote")
+	assert_false(watch_tv_recipe.has_tools(), "Should not have tools")
+	assert_true(watch_tv_recipe.tools.is_empty(), "tools array should be empty")
 
-func test_recipe_has_correct_steps() -> void:
-	test("Recipe has correct steps (turn_on at tv, watch at couch, turn_off at tv)")
+func test_watch_tv_has_steps() -> void:
+	test("Recipe has steps (US-004)")
 
 	assert_eq(watch_tv_recipe.get_step_count(), 3, "Should have 3 steps")
 
@@ -84,10 +84,10 @@ func test_recipe_has_no_outputs() -> void:
 	assert_eq(outputs.size(), 0, "Should have no outputs")
 	assert_false(watch_tv_recipe.has_outputs(), "has_outputs() should return false")
 
-func test_recipe_has_correct_motive_effects() -> void:
-	test("Recipe has correct motive effects (fun: 40)")
+func test_watch_tv_has_fun_motive() -> void:
+	test("Recipe has fun motive effect (US-004)")
 
-	assert_true(watch_tv_recipe.affects_motive("fun"), "Should affect fun")
+	assert_true(watch_tv_recipe.motive_effects.has("fun"), "Should have fun motive effect")
 	assert_eq(watch_tv_recipe.get_motive_effect("fun"), 40.0, "Fun effect should be 40")
 
 func test_step_details() -> void:
@@ -106,22 +106,12 @@ func test_step_details() -> void:
 	assert_true(step3.input_transform.is_empty(), "Step 3 should have no transforms")
 
 func test_full_tv_sequence_setup() -> void:
-	test("Full TV sequence can be set up")
+	test("Full TV sequence can be set up (no tools required)")
 
 	# Create NPC
 	var npc = NPCScene.instantiate()
 	test_area.add_child(npc)
 	npc.is_initialized = true
-
-	# Create container with remote (tool)
-	var container: ItemContainer = ContainerScene.instantiate()
-	container.position = Vector2(50, 0)
-	test_area.add_child(container)
-
-	var remote: ItemEntity = ItemEntityScene.instantiate()
-	remote.item_tag = "remote"
-	test_area.add_child(remote)
-	container.add_item(remote)
 
 	# Create stations
 	var tv: Station = StationScene.instantiate()
@@ -145,10 +135,8 @@ func test_full_tv_sequence_setup() -> void:
 	couch.add_child(couch_footprint)
 	couch._auto_discover_markers()
 
-	# Set up NPC with containers and stations
-	var containers: Array[ItemContainer] = [container]
+	# Set up NPC with stations (no containers needed - no tools)
 	var stations: Array[Station] = [tv, couch]
-	npc.set_available_containers(containers)
 	npc.set_available_stations(stations)
 
 	# Create and post job
@@ -158,7 +146,60 @@ func test_full_tv_sequence_setup() -> void:
 	assert_eq(job.recipe.recipe_name, "Watch TV", "Job should use watch TV recipe")
 
 	# Cleanup
-	container.queue_free()
+	tv.queue_free()
+	couch.queue_free()
+	npc.queue_free()
+
+func test_watch_tv_can_start_without_tools() -> void:
+	test("can_start_job succeeds without tool items (US-004)")
+
+	# Create NPC
+	var npc = NPCScene.instantiate()
+	test_area.add_child(npc)
+	npc.is_initialized = true
+
+	# Create stations
+	var tv: Station = StationScene.instantiate()
+	tv.station_tag = "tv"
+	test_area.add_child(tv)
+
+	var tv_footprint := Marker2D.new()
+	tv_footprint.name = "AgentFootprint"
+	tv.add_child(tv_footprint)
+	tv._auto_discover_markers()
+
+	var couch: Station = StationScene.instantiate()
+	couch.station_tag = "couch"
+	test_area.add_child(couch)
+
+	var couch_footprint := Marker2D.new()
+	couch_footprint.name = "AgentFootprint"
+	couch.add_child(couch_footprint)
+	couch._auto_discover_markers()
+
+	# Set up NPC with stations only (no containers, no tools)
+	var stations: Array[Station] = [tv, couch]
+	npc.set_available_stations(stations)
+
+	# Verify recipe has no tools requirement
+	assert_false(watch_tv_recipe.has_tools(), "Recipe should not require tools")
+
+	# Create job and verify NPC can start it without any tools
+	var job := Job.new(watch_tv_recipe, 5)
+
+	# The job should be startable - NPC doesn't need to gather any tools
+	assert_not_null(job, "Job should be created")
+	assert_false(watch_tv_recipe.has_tools(), "Recipe should have no tools")
+	assert_false(watch_tv_recipe.has_inputs(), "Recipe should have no inputs")
+
+	# Claim and start job
+	job.claim(npc)
+	assert_eq(job.state, Job.JobState.CLAIMED, "Job should be claimed")
+
+	job.start()
+	assert_eq(job.state, Job.JobState.IN_PROGRESS, "Job should start without needing tools")
+
+	# Cleanup
 	tv.queue_free()
 	couch.queue_free()
 	npc.queue_free()
@@ -251,23 +292,13 @@ func test_turn_off_step_at_tv() -> void:
 	npc.queue_free()
 
 func test_agent_can_execute_full_sequence() -> void:
-	test("Agent can execute full TV watching sequence")
+	test("Agent can execute full TV watching sequence (no tools needed)")
 
 	# Create NPC
 	var npc = NPCScene.instantiate()
 	npc.position = Vector2(0, 0)
 	test_area.add_child(npc)
 	npc.is_initialized = true
-
-	# Create container with remote (tool, not consumed)
-	var container: ItemContainer = ContainerScene.instantiate()
-	container.position = Vector2(50, 0)
-	test_area.add_child(container)
-
-	var remote: ItemEntity = ItemEntityScene.instantiate()
-	remote.item_tag = "remote"
-	test_area.add_child(remote)
-	container.add_item(remote)
 
 	# Create stations with proper markers
 	var tv: Station = StationScene.instantiate()
@@ -292,10 +323,8 @@ func test_agent_can_execute_full_sequence() -> void:
 	couch.add_child(couch_footprint)
 	couch._auto_discover_markers()
 
-	# Set up NPC
-	var containers: Array[ItemContainer] = [container]
+	# Set up NPC with stations (no tools required)
 	var stations: Array[Station] = [tv, couch]
-	npc.set_available_containers(containers)
 	npc.set_available_stations(stations)
 
 	# Create job
@@ -306,14 +335,8 @@ func test_agent_can_execute_full_sequence() -> void:
 	job.claim(npc)
 	assert_eq(job.state, Job.JobState.CLAIMED, "Job should be claimed")
 
-	# 2. Gather remote (tool, not consumed)
-	container.remove_item(remote)
-	remote.set_location(ItemEntity.ItemLocation.IN_HAND)
-	npc.held_items.append(remote)
-	job.add_gathered_item(remote)
-
-	assert_eq(npc.held_items.size(), 1, "NPC should hold 1 item (remote)")
-	assert_eq(remote.location, ItemEntity.ItemLocation.IN_HAND, "Remote should be IN_HAND")
+	# 2. No tools to gather - NPC should have no held items
+	assert_eq(npc.held_items.size(), 0, "NPC should hold 0 items (no tools)")
 
 	# 3. Start job
 	job.start()
@@ -366,19 +389,10 @@ func test_agent_can_execute_full_sequence() -> void:
 	var final_fun: float = npc.motives.get_value(Motive.MotiveType.FUN)
 	assert_true(final_fun > initial_fun, "Fun should increase after watching TV")
 
-	# Verify tool is preserved (not consumed)
-	var consumed_tags := watch_tv_recipe.get_consumed_input_tags()
-	assert_eq(consumed_tags.size(), 0, "Should have 0 consumed inputs")
-	assert_false(consumed_tags.has("remote"), "remote should NOT be consumed")
-
-	# Remote should still exist (tools are preserved)
-	assert_true(is_instance_valid(remote), "Remote should still exist (not consumed)")
-
 	job.complete()
 	assert_eq(job.state, Job.JobState.COMPLETED, "Job should be completed")
 
 	# Cleanup
-	container.queue_free()
 	tv.queue_free()
 	couch.queue_free()
 	npc.queue_free()

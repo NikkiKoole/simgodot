@@ -9,7 +9,7 @@
 script = ExtResource("1")
 recipe_name = "Watch TV"
 inputs = []
-tools = ["remote"]
+tools = []
 steps = [ExtResource("2"), ExtResource("3"), ExtResource("4")]
 outputs = []
 motive_effects = {

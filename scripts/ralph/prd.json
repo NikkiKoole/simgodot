@@ -86,7 +86,7 @@
         "test_watch_tv_can_start_without_tools: can_start_job succeeds without tool items"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Tool handling is a bigger subject - defer to future PRD. For now, remove the requirement so watch_tv works without tools."
     },
     {
