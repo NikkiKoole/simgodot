@@ -3,72 +3,19 @@
 - Run tests with: "/Users/nikkikoole/Downloads/Godot 3.app/Contents/MacOS/Godot" --headless scenes/tests/test_*.tscn
 - Or run all tests: ./run_tests.sh
 - ItemEntity states: RAW, PREPPED, COOKED, DIRTY, BROKEN
+- ItemEntity locations: IN_CONTAINER, IN_HAND, IN_SLOT, ON_GROUND
 - Station.place_output_item() adds items as children of station
 - Items falling back to ground use station.global_position for placement
 - JobBoard autoload is at /root/JobBoard (NOT /root/Main/JobBoard)
 - When creating test JobBoards, use free() not queue_free() to avoid stale node conflicts
+- Level.all_items tracks all spawned items in the level
+- Item reservation: item.reserve_item(agent) / item.release_item() / item.is_reserved()
 
----
+## Key Files for Ground Item Feature
+- scripts/level.gd: Has all_items array, needs get_ground_items_by_tag()
+- scripts/station.gd: Has output_slots, needs get_available_output_items_by_tag()
+- scripts/job_board.gd: can_start_job() and _reserve_items_for_job() need to check all sources
+- scripts/npc.gd: _find_container_with_item() needs to become _find_item_source()
+- scripts/item_entity.gd: Already has location enum and reservation - no changes needed
 
-## 2026-01-10 - US-001
-- Fixed _spawn_outputs to use global_position instead of Vector2.ZERO for ground fallback
-- Added test_spawn_outputs_fallback_to_ground: verifies items placed on ground when output slots full
-- Added test_spawn_outputs_sets_prepped_state: verifies PREPPED state for prepped items
-- Files changed: scripts/job_board.gd, scripts/tests/test_jobboard.gd, scripts/ralph/prd.json
-- **Learnings for future iterations:**
-  - Existing test_complete_job_spawns_outputs already covered most cases
-  - Items in output slots become children of the station (intentional design)
-  - The "level node scene tree" criterion means items exist in scene tree, not necessarily at level root
----
-
-## 2026-01-10 - US-002
-- Refactored NPC._finish_job to delegate completion logic to JobBoard.complete_job()
-- Removed duplicated motive effects loop from NPC (now handled by JobBoard)
-- Removed item consumption logic from NPC (now handled by JobBoard)
-- NPC still handles local cleanup: clearing held_items, releasing station, setting IDLE state
-- Added 6 new tests for US-002 in test_agent_working.gd
-- Updated existing tests to use proper JobBoard setup
-- Files changed: scripts/npc.gd, scripts/tests/test_agent_working.gd, scripts/ralph/prd.json
-- **Learnings for future iterations:**
-  - JobBoard autoload is at /root/JobBoard, not /root/Main/JobBoard
-  - Test JobBoards must use free() instead of queue_free() to avoid multiple nodes at same path
-  - GDScript type inference needs explicit type for dynamic method returns (e.g., `var result: bool = ...`)
-  - complete_job() returns false if job not in JobBoard's jobs array - important for testing
----
-
-## 2026-01-10 - US-003
-- Removed motive_effects from cook_simple_meal.tres (was hunger: 50.0, now empty {})
-- Updated test_recipe_cook.gd: renamed test to test_cook_simple_meal_no_motive_effects, added test_cooking_does_not_satisfy_hunger
-- Updated test_interruption.gd, test_debug_cooking_scenario.gd, test_debug_interruption_scenario.gd to remove hunger increase assertions
-- Files changed: resources/recipes/cook_simple_meal.tres, scripts/tests/test_recipe_cook.gd, scripts/tests/test_interruption.gd, scripts/tests/test_debug_cooking_scenario.gd, scripts/tests/test_debug_interruption_scenario.gd, scripts/ralph/prd.json
-- **Learnings for future iterations:**
-  - Changing recipe motive_effects has cascading test impacts - multiple test files may assert on motive changes
-  - Tests for cooking scenarios assumed hunger satisfaction came from cooking; now it will come from eat_snack recipe
-  - GDScript .tres files use simple key-value syntax: `motive_effects = {}` for empty dictionary
----
-
-## 2026-01-10 - US-004
-- Removed tools requirement from watch_tv.tres (was tools = ["remote"], now tools = [])
-- Updated test_recipe_tv.gd: renamed tests to US-004 naming convention
-- Simplified test_full_tv_sequence_setup and test_agent_can_execute_full_sequence to not use remote
-- Added test_watch_tv_can_start_without_tools to verify job can start without tool items
-- Files changed: resources/recipes/watch_tv.tres, scripts/tests/test_recipe_tv.gd, scripts/ralph/prd.json
-- **Learnings for future iterations:**
-  - Tool handling is deferred - recipes that previously needed tools can work without them for now
-  - Tests that used tools needed to be simplified to remove container/tool setup
-  - Recipe.has_tools() returns false when tools array is empty
----
-
-## 2026-01-10 - US-005
-- Created eat_snack.tres consumption recipe (inputs cooked_meal, no steps, no outputs, hunger: 50.0)
-- Created test_recipe_eat_snack.gd with 7 tests (25 assertions total)
-- Created test_recipe_eat_snack.tscn test scene
-- Added test_recipe_eat_snack to run_tests.sh
-- Files changed: resources/recipes/eat_snack.tres, scripts/tests/test_recipe_eat_snack.gd, scenes/tests/test_recipe_eat_snack.tscn, run_tests.sh, scripts/ralph/prd.json
-- **Learnings for future iterations:**
-  - Consumption recipes have steps = [] for instant consumption (no station required)
-  - RecipeRegistry auto-loads all .tres files from resources/recipes/ directory
-  - ItemEntity.set_state() must be called after adding node to scene tree
-  - Integration tests simulating job completion need to manually clear held_items (NPC._finish_job does this)
-  - All 5 user stories now complete - PRD implementation finished
 ---
