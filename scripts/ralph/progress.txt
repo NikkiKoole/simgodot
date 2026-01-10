@@ -106,3 +106,20 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - GDScript typed arrays (Array[Dictionary]) cannot be assigned from untyped array literals - use .clear() and .append() instead
   - Station output pickup is stubbed (TODO for US-007) - _find_item_source returns station but _start_gathering_next_item doesn't handle it yet
 ---
+
+## 2026-01-10 - US-007
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Extended NPC hauling to pick up items from station output slots
+- Files changed:
+  - scripts/npc.gd: Added target_station_output state variable, updated _start_gathering_next_item() to handle station_output source type, added _pathfind_to_station_output(), _on_arrived_at_station_output(), _pick_up_station_output() methods, updated _follow_path_hauling() to handle station output arrival, updated _cancel_hauling() to clear target_station_output
+  - scripts/tests/test_station_output_hauling.gd: New test file with 5 test cases (14 assertions)
+  - scenes/tests/test_station_output_hauling.tscn: New test scene
+  - run_tests.sh: Added test_station_output_hauling to test suite
+- **Learnings for future iterations:**
+  - NPC hauling now fully supports all three source types: container, ground, and station_output
+  - target_station_output tracks stations with output items being pathfound to (parallel to target_container and target_ground_item)
+  - _pick_up_station_output() finds the item's slot index and calls station.remove_output_item(slot_index)
+  - Station uses get_agent_position() for where NPC should stand when picking up items
+  - When station output item disappears before arrival, NPC re-searches for alternatives via _start_gathering_next_item()
+  - Pattern: _follow_path_hauling checks targets in order: target_ground_item, target_station_output, then falls back to target_container
+---

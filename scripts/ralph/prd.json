@@ -162,7 +162,7 @@
         "test_npc_continues_after_station_pickup: NPC proceeds to next step after pickup"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Similar to US-006 but for station output slots. Stations already have remove_output_item()."
     },
     {
