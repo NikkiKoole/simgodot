@@ -61,6 +61,9 @@ func run_tests() -> void:
 	test_complete_job_preserves_tools()
 	test_complete_job_with_transforms()
 	test_complete_job_invalid_states()
+	test_spawn_outputs_registers_ground_items_with_level()
+	test_spawn_outputs_ground_discoverable()
+	test_spawn_outputs_station_slot_not_in_level()
 
 	_log_summary()
 
@@ -1911,4 +1914,159 @@ func test_complete_job_invalid_states() -> void:
 
 	# Cleanup
 	agent.queue_free()
+	_cleanup_job_board(board)
+
+
+# ============================================================================
+# _spawn_outputs() ground item registration tests (US-008)
+# ============================================================================
+
+const LevelScene = preload("res://scenes/tests/test_level.tscn")
+
+func _create_real_level() -> Node2D:
+	var level: Node2D = LevelScene.instantiate()
+	test_area.add_child(level)
+	return level
+
+
+func test_spawn_outputs_registers_ground_items_with_level() -> void:
+	test("spawn_outputs registers ground items with Level.all_items (US-008)")
+	var board = _create_job_board()
+	var agent := _create_mock_agent()
+
+	# Create a real Level
+	var level := _create_real_level()
+
+	# Create recipe with 2 outputs
+	var recipe := _create_recipe_with_outputs("Cooking",
+		[{"tag": "cooked_meal", "quantity": 2}],
+		{}
+	)
+
+	# Create station with only 1 output slot (so 1 item goes to ground)
+	var station: Station = level.add_station(Vector2(100, 100), "counter")
+
+	# Add output slot marker to station
+	var marker := Marker2D.new()
+	marker.name = "OutputSlot0"
+	marker.position = Vector2(0, 0)
+	station.add_child(marker)
+	station._auto_discover_markers()
+
+	var job: Job = board.post_job(recipe, 1)
+	board.claim_job(job, agent)
+	job.start()
+
+	# Initial state: level.all_items should be empty
+	assert_array_size(level.all_items, 0, "Level should start with no items")
+
+	# Complete the job (spawns outputs)
+	var completed: bool = board.complete_job(job, agent, station)
+	assert_true(completed, "Job should complete")
+
+	# Ground item should be registered in level.all_items
+	assert_array_size(level.all_items, 1, "Level should have 1 ground item registered")
+
+	# The registered item should have ON_GROUND location
+	var ground_item: ItemEntity = level.all_items[0]
+	assert_eq(ground_item.location, ItemEntity.ItemLocation.ON_GROUND, "Registered item should be ON_GROUND")
+	assert_eq(ground_item.item_tag, "cooked_meal", "Registered item should have correct tag")
+
+	# Cleanup
+	agent.queue_free()
+	level.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_spawn_outputs_ground_discoverable() -> void:
+	test("spawn_outputs ground items discoverable via get_ground_items_by_tag (US-008)")
+	var board = _create_job_board()
+	var agent := _create_mock_agent()
+
+	# Create a real Level
+	var level := _create_real_level()
+
+	# Create recipe with outputs
+	var recipe := _create_recipe_with_outputs("Cooking",
+		[{"tag": "cooked_meal", "quantity": 3}],
+		{}
+	)
+
+	# Create station with only 1 output slot (so 2 items go to ground)
+	var station: Station = level.add_station(Vector2(100, 100), "counter")
+
+	# Add output slot marker to station
+	var marker := Marker2D.new()
+	marker.name = "OutputSlot0"
+	marker.position = Vector2(0, 0)
+	station.add_child(marker)
+	station._auto_discover_markers()
+
+	var job: Job = board.post_job(recipe, 1)
+	board.claim_job(job, agent)
+	job.start()
+
+	# Complete the job (spawns outputs)
+	var completed: bool = board.complete_job(job, agent, station)
+	assert_true(completed, "Job should complete")
+
+	# Ground items should be discoverable via get_ground_items_by_tag
+	var discoverable: Array[ItemEntity] = level.get_ground_items_by_tag("cooked_meal")
+	assert_array_size(discoverable, 2, "Should discover 2 ground items")
+
+	# All discovered items should have correct properties
+	for item in discoverable:
+		assert_eq(item.item_tag, "cooked_meal", "Discovered item should have correct tag")
+		assert_eq(item.location, ItemEntity.ItemLocation.ON_GROUND, "Discovered item should be ON_GROUND")
+		assert_false(item.is_reserved(), "Discovered item should not be reserved")
+
+	# Cleanup
+	agent.queue_free()
+	level.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_spawn_outputs_station_slot_not_in_level() -> void:
+	test("spawn_outputs station slot items not duplicated in Level.all_items (US-008)")
+	var board = _create_job_board()
+	var agent := _create_mock_agent()
+
+	# Create a real Level
+	var level := _create_real_level()
+
+	# Create recipe with 1 output
+	var recipe := _create_recipe_with_outputs("Cooking",
+		[{"tag": "cooked_meal", "quantity": 1}],
+		{}
+	)
+
+	# Create station with 1 output slot (item goes to slot, not ground)
+	var station: Station = level.add_station(Vector2(100, 100), "counter")
+
+	# Add output slot marker to station
+	var marker := Marker2D.new()
+	marker.name = "OutputSlot0"
+	marker.position = Vector2(0, 0)
+	station.add_child(marker)
+	station._auto_discover_markers()
+
+	var job: Job = board.post_job(recipe, 1)
+	board.claim_job(job, agent)
+	job.start()
+
+	# Complete the job (spawns output to slot)
+	var completed: bool = board.complete_job(job, agent, station)
+	assert_true(completed, "Job should complete")
+
+	# Item in output slot should NOT be in level.all_items
+	assert_array_size(level.all_items, 0, "Level should have 0 items (slot items not registered)")
+
+	# But the item should be in the station output slot
+	var output_items: Array[ItemEntity] = station.get_all_output_items()
+	assert_array_size(output_items, 1, "Station should have 1 output item")
+	assert_eq(output_items[0].item_tag, "cooked_meal", "Output item should have correct tag")
+
+	# Cleanup
+	agent.queue_free()
+	level.queue_free()
 	_cleanup_job_board(board)

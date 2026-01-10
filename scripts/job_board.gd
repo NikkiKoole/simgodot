@@ -374,8 +374,26 @@ func complete_job(job: Job, agent: Node, station: Station = null) -> bool:
 
 
 ## Spawn output items at station output slots
+## If no output slot is available, items are placed on the ground and registered with Level
 func _spawn_outputs(recipe: Recipe, station: Station) -> void:
 	var outputs := recipe.get_outputs()
+
+	# Get level reference for registering ground items
+	# First try to find Level by traversing up the tree (works in tests)
+	# Fall back to current_scene (works in normal gameplay)
+	var level: Node = null
+	var parent: Node = station.get_parent()
+	while parent != null:
+		if parent.has_method("get_ground_items_by_tag"):
+			level = parent
+			break
+		parent = parent.get_parent()
+
+	# Fallback to current_scene if not found via tree traversal
+	if level == null:
+		var tree := station.get_tree()
+		if tree != null:
+			level = tree.current_scene
 
 	for output in outputs:
 		for i in range(output.quantity):
@@ -399,6 +417,12 @@ func _spawn_outputs(recipe: Recipe, station: Station) -> void:
 				station.add_child(item)
 				item.global_position = station.global_position
 				item.set_location(ItemEntity.ItemLocation.ON_GROUND)
+
+				# Register ground item with Level so it can be discovered
+				if level != null and "all_items" in level:
+					var all_items: Array = level.get("all_items")
+					if all_items != null and item not in all_items:
+						all_items.append(item)
 
 
 ## Apply recipe motive effects to the agent
