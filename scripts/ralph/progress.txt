@@ -1,0 +1,19 @@
+## Codebase Patterns
+- Tests are in scenes/tests/*.tscn (scenes) and scripts/tests/*.gd (code)
+- Run tests with: "/Users/nikkikoole/Downloads/Godot 3.app/Contents/MacOS/Godot" --headless scenes/tests/test_*.tscn
+- ItemEntity states: RAW, PREPPED, COOKED, DIRTY, BROKEN
+- Station.place_output_item() adds items as children of station
+- Items falling back to ground use station.global_position for placement
+
+---
+
+## 2026-01-10 - US-001
+- Fixed _spawn_outputs to use global_position instead of Vector2.ZERO for ground fallback
+- Added test_spawn_outputs_fallback_to_ground: verifies items placed on ground when output slots full
+- Added test_spawn_outputs_sets_prepped_state: verifies PREPPED state for prepped items
+- Files changed: scripts/job_board.gd, scripts/tests/test_jobboard.gd, scripts/ralph/prd.json
+- **Learnings for future iterations:**
+  - Existing test_complete_job_spawns_outputs already covered most cases
+  - Items in output slots become children of the station (intentional design)
+  - The "level node scene tree" criterion means items exist in scene tree, not necessarily at level root
+---
