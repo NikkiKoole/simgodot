@@ -8,6 +8,11 @@
 - JobBoard autoload is at /root/JobBoard (NOT /root/Main/JobBoard)
 - When creating test JobBoards, use free() not queue_free() to avoid stale node conflicts
 
+## Future Test Improvements
+- Need end-to-end test covering full production-consumption loop: gather raw_food → cook (produces cooked_meal) → eat (consumes cooked_meal, satisfies hunger)
+- Current e2e tests (test_debug_cooking_scenario) only verify production, not consumption
+- After US-005 (eat_snack recipe), add integration test that chains cook_simple_meal + eat_snack jobs
+
 ---
 
 ## 2026-01-10 - US-001
