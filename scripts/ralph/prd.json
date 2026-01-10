@@ -24,7 +24,7 @@
         "test_get_ground_items_excludes_slots: Does not return items IN_SLOT"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Level already has all_items array. Need to ensure items spawned by JobBoard._spawn_outputs are added to Level.all_items. May need Level reference passed to _spawn_outputs."
     },
     {

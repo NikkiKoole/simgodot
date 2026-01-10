@@ -12,10 +12,23 @@
 - Item reservation: item.reserve_item(agent) / item.release_item() / item.is_reserved()
 
 ## Key Files for Ground Item Feature
-- scripts/level.gd: Has all_items array, needs get_ground_items_by_tag()
+- scripts/level.gd: Has all_items array and get_ground_items_by_tag() (US-001 complete)
 - scripts/station.gd: Has output_slots, needs get_available_output_items_by_tag()
 - scripts/job_board.gd: can_start_job() and _reserve_items_for_job() need to check all sources
 - scripts/npc.gd: _find_container_with_item() needs to become _find_item_source()
 - scripts/item_entity.gd: Already has location enum and reservation - no changes needed
 
+---
+
+## 2026-01-10 - US-001
+- What was implemented: Added Level.get_ground_items_by_tag(tag: String) -> Array[ItemEntity] method
+- Files changed:
+  - scripts/level.gd: Added get_ground_items_by_tag() method
+  - scripts/tests/test_ground_items.gd: New test file with 7 test cases (22 assertions)
+  - scenes/tests/test_ground_items.tscn: New test scene
+  - run_tests.sh: Added test_ground_items to test suite
+- **Learnings for future iterations:**
+  - GDScript type inference with `:=` fails when the source method is on a dynamically-typed variable (e.g., `level: Node2D`). Use explicit type annotations like `var result: Array[ItemEntity] = level.method()` instead.
+  - Level.add_item() returns ItemEntity and automatically sets location to ON_GROUND and adds to all_items array.
+  - Test scenes for Level use TestLevel node (empty level with world_map="" and auto_spawn_npcs=false) as parent, with TestRunner as child.
 ---
