@@ -35,3 +35,14 @@
   - GDScript type inference needs explicit type for dynamic method returns (e.g., `var result: bool = ...`)
   - complete_job() returns false if job not in JobBoard's jobs array - important for testing
 ---
+
+## 2026-01-10 - US-003
+- Removed motive_effects from cook_simple_meal.tres (was hunger: 50.0, now empty {})
+- Updated test_recipe_cook.gd: renamed test to test_cook_simple_meal_no_motive_effects, added test_cooking_does_not_satisfy_hunger
+- Updated test_interruption.gd, test_debug_cooking_scenario.gd, test_debug_interruption_scenario.gd to remove hunger increase assertions
+- Files changed: resources/recipes/cook_simple_meal.tres, scripts/tests/test_recipe_cook.gd, scripts/tests/test_interruption.gd, scripts/tests/test_debug_cooking_scenario.gd, scripts/tests/test_debug_interruption_scenario.gd, scripts/ralph/prd.json
+- **Learnings for future iterations:**
+  - Changing recipe motive_effects has cascading test impacts - multiple test files may assert on motive changes
+  - Tests for cooking scenarios assumed hunger satisfaction came from cooking; now it will come from eat_snack recipe
+  - GDScript .tres files use simple key-value syntax: `motive_effects = {}` for empty dictionary
+---

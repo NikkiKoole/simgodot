@@ -67,7 +67,7 @@
         "test_cooking_does_not_satisfy_hunger: NPC hunger unchanged after completing cook job"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Simple resource file edit. The motive satisfaction moves to the consumption recipe."
     },
     {
