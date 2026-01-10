@@ -140,7 +140,7 @@
         "test_npc_continues_after_ground_pickup: NPC proceeds to next hauling step after pickup"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Key behavior change. NPC needs target_ground_item state similar to target_container."
     },
     {

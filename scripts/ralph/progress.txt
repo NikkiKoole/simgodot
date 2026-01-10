@@ -89,3 +89,20 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - When passing empty typed arrays in tests, use explicit type: `var empty: Array[ItemContainer] = []` not just `[]`
   - _get_level() helper tries current_scene first, then parent node - allows flexibility in test setup
 ---
+
+## 2026-01-10 - US-006
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Extended NPC hauling to pick up ground items
+- Files changed:
+  - scripts/npc.gd: Added target_ground_item state variable, modified _start_gathering_next_item() to use _find_item_source(), added _pathfind_to_ground_item(), _on_arrived_at_ground_item(), _pick_up_ground_item() methods, updated _follow_path_hauling() to handle ground item arrival, updated _cancel_hauling() to clear target_ground_item
+  - scripts/tests/test_ground_item_hauling.gd: New test file with 6 test cases (16 assertions)
+  - scenes/tests/test_ground_item_hauling.tscn: New test scene
+  - run_tests.sh: Added test_ground_item_hauling to test suite
+- **Learnings for future iterations:**
+  - NPC hauling now uses _find_item_source() to find items from any source (container, station_output, ground)
+  - target_ground_item tracks ground items being pathfound to (parallel to target_container)
+  - _pick_up_ground_item() removes item from Level.all_items, sets location to IN_HAND, reparents to NPC
+  - When ground item disappears before arrival, NPC re-searches for alternatives via _start_gathering_next_item()
+  - GDScript typed arrays (Array[Dictionary]) cannot be assigned from untyped array literals - use .clear() and .append() instead
+  - Station output pickup is stubbed (TODO for US-007) - _find_item_source returns station but _start_gathering_next_item doesn't handle it yet
+---
