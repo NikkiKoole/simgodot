@@ -63,3 +63,17 @@
   - Tests that used tools needed to be simplified to remove container/tool setup
   - Recipe.has_tools() returns false when tools array is empty
 ---
+
+## 2026-01-10 - US-005
+- Created eat_snack.tres consumption recipe (inputs cooked_meal, no steps, no outputs, hunger: 50.0)
+- Created test_recipe_eat_snack.gd with 7 tests (25 assertions total)
+- Created test_recipe_eat_snack.tscn test scene
+- Added test_recipe_eat_snack to run_tests.sh
+- Files changed: resources/recipes/eat_snack.tres, scripts/tests/test_recipe_eat_snack.gd, scenes/tests/test_recipe_eat_snack.tscn, run_tests.sh, scripts/ralph/prd.json
+- **Learnings for future iterations:**
+  - Consumption recipes have steps = [] for instant consumption (no station required)
+  - RecipeRegistry auto-loads all .tres files from resources/recipes/ directory
+  - ItemEntity.set_state() must be called after adding node to scene tree
+  - Integration tests simulating job completion need to manually clear held_items (NPC._finish_job does this)
+  - All 5 user stories now complete - PRD implementation finished
+---

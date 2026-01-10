@@ -111,7 +111,7 @@
         "test_eating_consumes_meal_and_satisfies_hunger: Integration test - meal consumed, hunger increased"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Model after existing recipes like use_toilet.tres. This recipe needs no steps since eating can happen anywhere."
     }
   ]
