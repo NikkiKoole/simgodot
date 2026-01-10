@@ -69,6 +69,7 @@ var current_job: Job = null
 var held_items: Array[ItemEntity] = []
 var available_containers: Array[ItemContainer] = []
 var target_container: ItemContainer = null
+var target_ground_item: ItemEntity = null  # Ground item being pathfound to (US-006)
 var items_to_gather: Array[Dictionary] = []  # [{tag: String, quantity: int}]
 
 # Job system / Working
@@ -604,7 +605,7 @@ func _start_gathering_next_item() -> bool:
 		_on_all_items_gathered()
 		return true
 
-	# Find a container with the required item
+	# Find item from any source (container, station output, or ground)
 	var needed := items_to_gather[0]
 	var tag: String = needed["tag"]
 	var quantity: int = needed["quantity"]
@@ -620,16 +621,37 @@ func _start_gathering_next_item() -> bool:
 		items_to_gather.remove_at(0)
 		return _start_gathering_next_item()
 
-	# Find a container with an available item of this tag
-	target_container = _find_container_with_item(tag)
-	if target_container == null:
-		# No container found with this item, job cannot proceed
-		_cancel_hauling()
-		return false
+	# Find item from any source using _find_item_source (US-006)
+	var source := _find_item_source(tag)
 
-	# Pathfind to the container
-	_pathfind_to_container(target_container)
-	return true
+	match source["type"]:
+		"container":
+			target_container = source["source"] as ItemContainer
+			target_ground_item = null
+			_pathfind_to_container(target_container)
+			return true
+		"station_output":
+			# For station output, pathfind to station (handled in US-007)
+			# For now, treat similar to container - NPC goes to station
+			var station: Station = source["source"] as Station
+			target_container = null
+			target_ground_item = null
+			# TODO: US-007 will add proper station output pickup
+			# For now, skip station outputs and look for other sources
+			pass
+		"ground":
+			target_ground_item = source["source"] as ItemEntity
+			target_container = null
+			_pathfind_to_ground_item(target_ground_item)
+			return true
+		"none":
+			# No item found anywhere, job cannot proceed
+			_cancel_hauling()
+			return false
+
+	# Fallback: no valid source found
+	_cancel_hauling()
+	return false
 
 ## Find a container that has an available item with the given tag
 ## Also considers items reserved by this NPC for the current job
@@ -781,12 +803,49 @@ func _pathfind_to_container(container: ItemContainer) -> void:
 		# No path found
 		_cancel_hauling()
 
+## Pathfind to a ground item (US-006)
+func _pathfind_to_ground_item(item: ItemEntity) -> void:
+	if astar == null or item == null:
+		_cancel_hauling()
+		return
+
+	var target_pos := item.global_position
+
+	# Convert world positions to grid coordinates
+	var from_grid := Vector2i(
+		int(global_position.x / TILE_SIZE),
+		int(global_position.y / TILE_SIZE)
+	)
+	var to_grid := Vector2i(
+		int(target_pos.x / TILE_SIZE),
+		int(target_pos.y / TILE_SIZE)
+	)
+
+	# Get path from AStar
+	current_path = astar.get_point_path(from_grid, to_grid)
+
+	# Pre-smooth the path
+	if path_smoothing_enabled and current_path.size() > 2:
+		current_path = _smooth_path(current_path)
+
+	path_index = 0
+
+	if current_path.size() > 0:
+		current_state = State.HAULING
+	else:
+		# No path found
+		_cancel_hauling()
+
 ## Follow path while in HAULING state
 func _follow_path_hauling(speed_mult: float) -> void:
 	var result := _follow_path_step(speed_mult)
 	match result:
 		PathResult.ARRIVED:
-			_on_arrived_at_container()
+			# Check what we arrived at: container or ground item (US-006)
+			if target_ground_item != null:
+				_on_arrived_at_ground_item()
+			else:
+				_on_arrived_at_container()
 		PathResult.STUCK:
 			_cancel_hauling()
 		# PathResult.MOVING: continue next frame
@@ -828,6 +887,100 @@ func _on_arrived_at_container() -> void:
 	# Continue gathering
 	target_container = null
 	_start_gathering_next_item()
+
+## Called when agent arrives at a ground item (US-006)
+func _on_arrived_at_ground_item() -> void:
+	if target_ground_item == null or items_to_gather.is_empty():
+		_cancel_hauling()
+		return
+
+	var needed := items_to_gather[0]
+	var tag: String = needed["tag"]
+
+	# Verify the ground item is still valid and matches what we need
+	if not is_instance_valid(target_ground_item):
+		# Item disappeared before we arrived, re-search for alternatives
+		print("[NPC ", npc_id, "] Ground item disappeared, looking for another")
+		target_ground_item = null
+		if not _start_gathering_next_item():
+			_cancel_hauling()
+		return
+
+	# Check that item tag still matches (sanity check)
+	if target_ground_item.item_tag != tag:
+		print("[NPC ", npc_id, "] Ground item tag mismatch, looking for another")
+		target_ground_item = null
+		if not _start_gathering_next_item():
+			_cancel_hauling()
+		return
+
+	# Check that item is still on ground and available (not picked up by someone else)
+	if target_ground_item.location != ItemEntity.ItemLocation.ON_GROUND:
+		print("[NPC ", npc_id, "] Ground item no longer on ground, looking for another")
+		target_ground_item = null
+		if not _start_gathering_next_item():
+			_cancel_hauling()
+		return
+
+	# Check reservation - must be unreserved or reserved by us
+	if target_ground_item.is_reserved() and target_ground_item.reserved_by != self:
+		print("[NPC ", npc_id, "] Ground item reserved by another, looking for another")
+		target_ground_item = null
+		if not _start_gathering_next_item():
+			_cancel_hauling()
+		return
+
+	# Pick up the ground item
+	print("[NPC ", npc_id, "] Picking up ground item: ", target_ground_item.item_tag)
+	_pick_up_ground_item(target_ground_item)
+
+	# Check if we need more of this item
+	var quantity_needed: int = needed["quantity"]
+	var held_count := 0
+	for held_item in held_items:
+		if held_item.item_tag == tag:
+			held_count += 1
+
+	if held_count >= quantity_needed:
+		# Got enough of this item, move to next requirement
+		items_to_gather.remove_at(0)
+
+	# Continue gathering
+	target_ground_item = null
+	_start_gathering_next_item()
+
+## Pick up a ground item (US-006)
+## Removes from scene, changes location to IN_HAND, adds to held_items
+func _pick_up_ground_item(item: ItemEntity) -> void:
+	if not is_instance_valid(item):
+		return
+
+	# Remove from Level's all_items tracking
+	var level := _get_level()
+	if level != null:
+		# Note: remove_item() calls queue_free(), but we want to keep the item
+		# So we manually remove from all_items array instead
+		if level.has_method("get_all_items"):
+			var all_items_arr: Array[ItemEntity] = level.get_all_items()
+			var idx: int = all_items_arr.find(item)
+			if idx >= 0 and "all_items" in level:
+				level.all_items.remove_at(idx)
+
+	# Set item state to IN_HAND
+	item.pick_up(self)
+
+	# Add to held items
+	held_items.append(item)
+
+	# Add to job's gathered items if we have a job
+	if current_job != null:
+		current_job.add_gathered_item(item)
+
+	# Reparent from world to agent
+	if item.get_parent() != null:
+		item.get_parent().remove_child(item)
+	add_child(item)
+	item.position = Vector2.ZERO  # Hide at agent's position
 
 ## Pick up an item from a container
 func _pick_up_item(item: ItemEntity) -> void:
@@ -884,6 +1037,7 @@ func _cancel_hauling() -> void:
 
 	items_to_gather.clear()
 	target_container = null
+	target_ground_item = null  # US-006: Clear ground item target
 	current_state = State.IDLE
 
 ## Drop an item at the current position
