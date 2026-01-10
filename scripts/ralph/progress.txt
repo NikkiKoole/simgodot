@@ -44,3 +44,17 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Station.output_slot_items is a Dictionary mapping slot_index -> ItemEntity
   - Simple query methods can iterate output_slot_items.values() directly
 ---
+
+## 2026-01-10 - US-003
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Extended JobBoard.can_start_job() to check ground items and station output slots
+- Files changed:
+  - scripts/job_board.gd: Modified can_start_job() to accept optional level parameter, check station outputs and ground items for both inputs and tools
+  - scripts/tests/test_jobboard.gd: Added 6 new test cases (MockLevel class, tests for ground items, station outputs, combined sources, reserved items, partial sources, backward compatibility)
+- **Learnings for future iterations:**
+  - can_start_job() now has optional 4th parameter `level: Node = null` for backward compatibility
+  - If level is null, tries to get it via `get_tree().current_scene`
+  - Use `has_method("get_ground_items_by_tag")` to check if level supports ground item queries
+  - Order of item discovery: containers first, then station outputs, then ground items
+  - Tools are also searched in station outputs and ground items (not just containers)
+---

@@ -69,7 +69,7 @@
         "test_can_start_partial_sources: Handles case where some items in container, some on ground"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "This is the core change. JobBoard needs Level reference - could pass as parameter or use get_tree().current_scene."
     },
     {
