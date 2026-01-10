@@ -14,8 +14,8 @@
 ## Key Files for Ground Item Feature
 - scripts/level.gd: Has all_items array and get_ground_items_by_tag() (US-001 complete)
 - scripts/station.gd: Has output_slots and get_available_output_items_by_tag() (US-002 complete)
-- scripts/job_board.gd: can_start_job() and _reserve_items_for_job() need to check all sources
-- scripts/npc.gd: _find_container_with_item() needs to become _find_item_source()
+- scripts/job_board.gd: can_start_job() and _reserve_items_for_job() check all sources (US-003, US-004 complete)
+- scripts/npc.gd: _find_item_source() finds items from containers, stations, ground (US-005 complete)
 - scripts/item_entity.gd: Already has location enum and reservation - no changes needed
 
 ---
@@ -70,4 +70,22 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - _reserve_items_for_job() uses same priority order as can_start_job(): containers first, then station outputs, then ground items
   - GDScript type inference with `:=` fails when calling methods with multiple optional parameters - use explicit `var claimed: bool = board.claim_job(...)` instead
   - Reservation prevents double-claiming: item.reserve_item(agent) returns false if already reserved by another agent
+---
+
+## 2026-01-10 - US-005
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added NPC._find_item_source(tag: String) -> Dictionary method to locate items from any source
+- Files changed:
+  - scripts/npc.gd: Added _find_item_source() method (returns {type, source} dict) and _get_level() helper method
+  - scripts/tests/test_find_item_source.gd: New test file with 7 test cases (14 assertions)
+  - scenes/tests/test_find_item_source.tscn: New test scene
+  - run_tests.sh: Added test_find_item_source to test suite
+- **Learnings for future iterations:**
+  - _find_item_source() returns Dictionary with 'type' (string) and 'source' (node/null) keys
+  - type values: 'container', 'station_output', 'ground', 'none'
+  - source is: ItemContainer, Station, ItemEntity (for ground), or null
+  - Priority order matches JobBoard: containers first, then station outputs, then ground items
+  - Method respects reservations: finds unreserved items OR items reserved by self (when current_job != null)
+  - When passing empty typed arrays in tests, use explicit type: `var empty: Array[ItemContainer] = []` not just `[]`
+  - _get_level() helper tries current_scene first, then parent node - allows flexibility in test setup
 ---

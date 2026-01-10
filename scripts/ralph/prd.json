@@ -117,7 +117,7 @@
         "test_find_source_none: Returns type='none' when item not found anywhere"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "This replaces/extends _find_container_with_item. May want to keep both for backward compatibility."
     },
     {
