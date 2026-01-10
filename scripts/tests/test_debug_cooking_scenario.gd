@@ -59,9 +59,21 @@ func _setup_test_level() -> void:
 	add_child(test_level)
 
 
+## Helper to find an item by tag recursively in the scene tree
+func _find_item_recursive(node: Node, item_tag: String) -> ItemEntity:
+	if node is ItemEntity and node.item_tag == item_tag:
+		return node
+	for child in node.get_children():
+		var found := _find_item_recursive(child, item_tag)
+		if found != null:
+			return found
+	return null
+
+
 func run_tests() -> void:
 	_log_header()
 	await test_cooking_scenario_full_flow()
+	await test_production_consumption_loop()
 	_log_summary()
 
 
@@ -251,6 +263,209 @@ func test_cooking_scenario_full_flow() -> void:
 
 	print("    Cooking scenario completed in %d frames (~%.2f seconds)" % [frame_count, frame_count / 60.0])
 	print("    Cooking completed - cooked_meal produced (hunger unchanged per US-003)")
+
+	# ==========================================================================
+	# CLEANUP
+	# ==========================================================================
+
+	DebugCommands.clear_scenario()
+	JobBoard.clear_all_jobs()
+
+
+## Test the full production-consumption loop: cook -> eat
+## This chains cook_simple_meal (produces cooked_meal) with eat_snack (consumes cooked_meal, satisfies hunger)
+func test_production_consumption_loop() -> void:
+	test("Production-consumption loop: cook raw_food -> produce cooked_meal -> eat snack -> hunger satisfied")
+
+	# Clear any existing state
+	DebugCommands.clear_scenario()
+	JobBoard.clear_all_jobs()
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# ==========================================================================
+	# SETUP PHASE
+	# ==========================================================================
+
+	# 1. Spawn a fridge with raw_food
+	var fridge: ItemContainer = DebugCommands.spawn_container("fridge", Vector2(96, 192))
+	assert_not_null(fridge, "Fridge should spawn")
+	await get_tree().process_frame
+
+	var raw_food: ItemEntity = DebugCommands.spawn_item("raw_food", fridge)
+	assert_not_null(raw_food, "Raw food should spawn in fridge")
+
+	# 2. Spawn counter station for prep
+	var counter: Station = DebugCommands.spawn_station("counter", Vector2(192, 192))
+	assert_not_null(counter, "Counter should spawn")
+	await get_tree().process_frame
+
+	var counter_slot := Marker2D.new()
+	counter_slot.name = "InputSlot0"
+	counter.add_child(counter_slot)
+	var counter_footprint := Marker2D.new()
+	counter_footprint.name = "AgentFootprint"
+	counter_footprint.position = Vector2(0, 24)
+	counter.add_child(counter_footprint)
+	counter._auto_discover_markers()
+
+	# 3. Spawn stove station for cooking
+	var stove: Station = DebugCommands.spawn_station("stove", Vector2(288, 192))
+	assert_not_null(stove, "Stove should spawn")
+	await get_tree().process_frame
+
+	var stove_slot := Marker2D.new()
+	stove_slot.name = "InputSlot0"
+	stove.add_child(stove_slot)
+	var stove_output := Marker2D.new()
+	stove_output.name = "OutputSlot0"
+	stove.add_child(stove_output)
+	var stove_footprint := Marker2D.new()
+	stove_footprint.name = "AgentFootprint"
+	stove_footprint.position = Vector2(0, 24)
+	stove.add_child(stove_footprint)
+	stove._auto_discover_markers()
+
+	# 4. Spawn NPC with low hunger (will want to eat)
+	var npc: Node = DebugCommands.spawn_npc(Vector2(128, 256), {
+		"hunger": 100.0,
+		"energy": 100.0,
+		"bladder": 100.0,
+		"hygiene": 100.0,
+		"fun": 100.0
+	})
+	assert_not_null(npc, "NPC should spawn")
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# Build typed arrays
+	var typed_containers: Array[ItemContainer] = [fridge]
+	var typed_stations: Array[Station] = [counter, stove]
+	npc.set_available_containers(typed_containers)
+	npc.set_available_stations(typed_stations)
+
+	# ==========================================================================
+	# PHASE 1: COOKING - NPC cooks raw_food -> cooked_meal
+	# ==========================================================================
+
+	print("    Phase 1: Cooking raw_food -> cooked_meal")
+
+	# Post and claim cooking job
+	var cook_job: Job = DebugCommands.post_job("res://resources/recipes/cook_simple_meal.tres")
+	assert_not_null(cook_job, "Cook job should be posted")
+
+	var claimed: bool = JobBoard.claim_job(cook_job, npc, typed_containers)
+	assert_true(claimed, "NPC should claim cook job")
+
+	# Start hauling
+	var hauling_started: bool = npc.start_hauling_for_job(cook_job)
+	assert_true(hauling_started, "NPC should start hauling for cook job")
+
+	# Wait for cooking to complete
+	var cook_completed := {"value": false}
+	cook_job.job_completed.connect(func(): cook_completed["value"] = true)
+
+	var max_frames := 1200
+	var frame_count := 0
+
+	while not cook_completed["value"] and frame_count < max_frames:
+		await get_tree().physics_frame
+		frame_count += 1
+
+	assert_true(cook_completed["value"], "Cook job should complete")
+	assert_eq(cook_job.state, Job.JobState.COMPLETED, "Cook job state should be COMPLETED")
+	print("    Cooking completed in %d frames" % frame_count)
+
+	# Wait a frame for outputs to spawn
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# Find the cooked_meal that was produced
+	# Items are spawned as children of the station (either in output slot or directly)
+	var cooked_meal: ItemEntity = null
+
+	# Check stove children (most likely location)
+	for child in stove.get_children():
+		if child is ItemEntity and child.item_tag == "cooked_meal":
+			cooked_meal = child
+			break
+
+	# Check level children
+	if cooked_meal == null:
+		for child in test_level.get_children():
+			if child is ItemEntity and child.item_tag == "cooked_meal":
+				cooked_meal = child
+				break
+
+	# Check all nodes recursively in the scene
+	if cooked_meal == null:
+		cooked_meal = _find_item_recursive(get_tree().root, "cooked_meal")
+
+	assert_not_null(cooked_meal, "cooked_meal should be spawned after cooking")
+	print("    cooked_meal found at position: (%.0f, %.0f)" % [cooked_meal.global_position.x, cooked_meal.global_position.y])
+
+	# ==========================================================================
+	# PHASE 2: EATING - NPC eats cooked_meal -> hunger satisfied
+	# ==========================================================================
+
+	print("    Phase 2: Eating cooked_meal -> hunger satisfied")
+
+	# Set NPC hunger to low value
+	var initial_hunger: float = 10.0
+	DebugCommands.set_npc_motive(npc, "hunger", initial_hunger)
+	var actual_hunger: float = DebugCommands.get_npc_motive(npc, "hunger")
+	assert_approx_eq(actual_hunger, initial_hunger, "NPC hunger should be 10")
+
+	# Move cooked_meal to fridge so NPC can find it
+	# First remove from current parent
+	if cooked_meal.get_parent() != null:
+		cooked_meal.get_parent().remove_child(cooked_meal)
+	fridge.add_item(cooked_meal)
+	await get_tree().process_frame
+
+	# Verify fridge has the cooked_meal
+	var fridge_data: Dictionary = DebugCommands.get_inspection_data(fridge)
+	assert_true(fridge_data.items.has("cooked_meal"), "Fridge should have cooked_meal")
+
+	# Post and claim eat_snack job
+	var eat_job: Job = DebugCommands.post_job("res://resources/recipes/eat_snack.tres")
+	assert_not_null(eat_job, "Eat job should be posted")
+
+	var eat_claimed: bool = JobBoard.claim_job(eat_job, npc, typed_containers)
+	assert_true(eat_claimed, "NPC should claim eat job")
+
+	# Start hauling for eat job (gathering the cooked_meal)
+	var eat_hauling_started: bool = npc.start_hauling_for_job(eat_job)
+	assert_true(eat_hauling_started, "NPC should start hauling for eat job")
+
+	# Wait for eating to complete
+	var eat_completed := {"value": false}
+	eat_job.job_completed.connect(func(): eat_completed["value"] = true)
+
+	frame_count = 0
+	while not eat_completed["value"] and frame_count < max_frames:
+		await get_tree().physics_frame
+		frame_count += 1
+
+	assert_true(eat_completed["value"], "Eat job should complete")
+	assert_eq(eat_job.state, Job.JobState.COMPLETED, "Eat job state should be COMPLETED")
+	print("    Eating completed in %d frames" % frame_count)
+
+	# ==========================================================================
+	# VERIFICATION - Hunger should be satisfied
+	# ==========================================================================
+
+	var final_hunger: float = DebugCommands.get_npc_motive(npc, "hunger")
+
+	# Note: Hunger decays over time during simulation, so we can't expect exact values.
+	# The important verification is that after eating, hunger is significantly higher
+	# than the critical threshold, proving the eat_snack motive effect was applied.
+	# Starting at 10.0, after decay and +50 from eating, we expect ~30-60 range.
+	assert_true(final_hunger > 25.0, "Hunger should be above 25 after eating (started at 10, +50 from eating, minus decay)")
+	assert_true(final_hunger < 70.0, "Hunger should be below 70 (sanity check)")
+
+	print("    Production-consumption loop complete!")
+	print("    Hunger: started at %.1f, ended at %.1f (with decay + eat_snack +50 effect)" % [initial_hunger, final_hunger])
 
 	# ==========================================================================
 	# CLEANUP
