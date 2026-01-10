@@ -18,6 +18,4 @@ outputs = [{
     "item_tag": "cooked_meal",
     "quantity": 1
 }]
-motive_effects = {
-    "hunger": 50.0
-}
+motive_effects = {}

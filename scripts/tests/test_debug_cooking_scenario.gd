@@ -239,22 +239,18 @@ func test_cooking_scenario_full_flow() -> void:
 	assert_true(job_completed["value"], "Job should complete within timeout (took %d frames)" % frame_count)
 	assert_eq(job.state, Job.JobState.COMPLETED, "Job state should be COMPLETED")
 
-	# Verify hunger motive increased (recipe gives +50 hunger)
+	# Note: cook_simple_meal no longer has motive_effects (US-003)
+	# Hunger satisfaction now comes from eating the cooked meal via eat_snack recipe
+	# This test only verifies cooking completes successfully - not hunger satisfaction
 	var final_hunger: float = DebugCommands.get_npc_motive(npc, "hunger")
-	assert_true(final_hunger > initial_hunger, "Hunger should increase after eating (was %.1f, now %.1f)" % [initial_hunger, final_hunger])
-
-	# The recipe gives +50 hunger effect (internal value), which converts to user value
-	# Initial: 10 (user) -> -80 (internal)
-	# After +50 internal: -80 + 50 = -30 (internal) -> 35 (user)
-	# But motive may have decayed during the process, so just check it increased significantly
-	assert_true(final_hunger >= 30.0, "Hunger should be at least 30 after meal (got %.1f)" % final_hunger)
+	print("    Note: Hunger unchanged by cooking (US-003) - was %.1f, now %.1f" % [initial_hunger, final_hunger])
 
 	# Verify it took a reasonable amount of time (not instant)
 	# Prep (3s) + Cook (5s) = 8s minimum = 480 frames at 60fps
 	assert_true(frame_count > 200, "Job should take more than 200 frames (work timers should function)")
 
 	print("    Cooking scenario completed in %d frames (~%.2f seconds)" % [frame_count, frame_count / 60.0])
-	print("    Hunger went from %.1f to %.1f" % [initial_hunger, final_hunger])
+	print("    Cooking completed - cooked_meal produced (hunger unchanged per US-003)")
 
 	# ==========================================================================
 	# CLEANUP

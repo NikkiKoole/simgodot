@@ -24,12 +24,13 @@ func run_tests() -> void:
 	test_recipe_has_correct_inputs()
 	test_recipe_has_correct_steps()
 	test_recipe_has_correct_outputs()
-	test_recipe_has_correct_motive_effects()
+	test_cook_simple_meal_no_motive_effects()
 	test_step_transforms()
 	test_full_cooking_sequence_setup()
 	test_prep_step_transforms_raw_to_prepped()
 	test_cook_step_transforms_prepped_to_cooked()
 	test_agent_can_execute_full_sequence()
+	test_cooking_does_not_satisfy_hunger()
 	_log_summary()
 
 func test_recipe_loads_correctly() -> void:
@@ -78,11 +79,11 @@ func test_recipe_has_correct_outputs() -> void:
 		assert_eq(output.item_tag, "cooked_meal", "Output should be cooked_meal")
 		assert_eq(output.quantity, 1, "Quantity should be 1")
 
-func test_recipe_has_correct_motive_effects() -> void:
-	test("Recipe has correct motive effects (hunger: 50)")
+func test_cook_simple_meal_no_motive_effects() -> void:
+	test("Recipe has no motive effects (US-003: cooking doesn't satisfy hunger)")
 
-	assert_true(cook_simple_meal_recipe.affects_motive("hunger"), "Should affect hunger")
-	assert_eq(cook_simple_meal_recipe.get_motive_effect("hunger"), 50.0, "Hunger effect should be 50")
+	assert_true(cook_simple_meal_recipe.motive_effects.is_empty(), "motive_effects should be empty")
+	assert_false(cook_simple_meal_recipe.affects_motive("hunger"), "Should NOT affect hunger")
 
 func test_step_transforms() -> void:
 	test("Steps have correct input transforms")
@@ -346,18 +347,6 @@ func test_agent_can_execute_full_sequence() -> void:
 	job.advance_step()
 	assert_eq(job.current_step_index, 2, "Should be past last step")
 
-	# Get initial hunger
-	var initial_hunger: float = npc.motives.get_value(Motive.MotiveType.HUNGER)
-
-	# Apply motive effects manually (simulating _finish_job)
-	for motive_name in cook_simple_meal_recipe.motive_effects:
-		var effect: float = cook_simple_meal_recipe.motive_effects[motive_name]
-		if motive_name == "hunger":
-			npc.motives.fulfill(Motive.MotiveType.HUNGER, effect)
-
-	var final_hunger: float = npc.motives.get_value(Motive.MotiveType.HUNGER)
-	assert_true(final_hunger > initial_hunger, "Hunger should increase after completing meal")
-
 	job.complete()
 	assert_eq(job.state, Job.JobState.COMPLETED, "Job should be completed")
 
@@ -365,4 +354,28 @@ func test_agent_can_execute_full_sequence() -> void:
 	container.queue_free()
 	counter.queue_free()
 	stove.queue_free()
+	npc.queue_free()
+
+func test_cooking_does_not_satisfy_hunger() -> void:
+	test("Cooking does not satisfy hunger (US-003)")
+
+	# Create NPC and record initial hunger
+	var npc = NPCScene.instantiate()
+	test_area.add_child(npc)
+	npc.is_initialized = true
+
+	var initial_hunger: float = npc.motives.get_value(Motive.MotiveType.HUNGER)
+
+	# Simulate completing the cooking job by applying recipe motive_effects
+	# (This is what JobBoard.complete_job does)
+	for motive_name in cook_simple_meal_recipe.motive_effects:
+		var effect: float = cook_simple_meal_recipe.motive_effects[motive_name]
+		if motive_name == "hunger":
+			npc.motives.fulfill(Motive.MotiveType.HUNGER, effect)
+
+	var final_hunger: float = npc.motives.get_value(Motive.MotiveType.HUNGER)
+
+	# Since motive_effects is empty, hunger should be unchanged
+	assert_eq(final_hunger, initial_hunger, "Hunger should be unchanged after cooking (motive_effects is empty)")
+
 	npc.queue_free()

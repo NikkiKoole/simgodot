@@ -301,7 +301,7 @@ func test_interruption_and_resume_scenario() -> void:
 
 	# Set hunger low for NPC2
 	DebugCommands.set_npc_motive(npc2, "hunger", 10.0)
-	var npc2_initial_hunger: float = DebugCommands.get_npc_motive(npc2, "hunger")
+	# Note: Not tracking hunger since cook_simple_meal no longer affects it (US-003)
 
 	# Start the job for NPC2
 	# If there's an item at a station, NPC2 should continue from there
@@ -344,13 +344,13 @@ func test_interruption_and_resume_scenario() -> void:
 	assert_true(job_completed["value"], "Job should complete within timeout (took %d frames)" % frame_count)
 	assert_eq(job.state, Job.JobState.COMPLETED, "Job state should be COMPLETED")
 
-	# Verify NPC2's hunger increased (recipe gives +50 hunger)
-	var npc2_final_hunger: float = DebugCommands.get_npc_motive(npc2, "hunger")
-	assert_true(npc2_final_hunger > npc2_initial_hunger, "NPC2 hunger should increase after eating (was %.1f, now %.1f)" % [npc2_initial_hunger, npc2_final_hunger])
+	# Note: cook_simple_meal no longer has motive_effects (US-003)
+	# Hunger satisfaction now comes from eating the cooked meal via eat_snack recipe
+	# This test only verifies cooking completes successfully after interruption
 
 	print("    Interruption scenario completed successfully!")
 	print("    NPC1 was interrupted, NPC2 resumed and completed the job in %d frames" % frame_count)
-	print("    NPC2 hunger went from %.1f to %.1f" % [npc2_initial_hunger, npc2_final_hunger])
+	print("    Cooking completed - cooked_meal produced (hunger unchanged per US-003)")
 
 	# ==========================================================================
 	# CLEANUP

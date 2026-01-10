@@ -745,17 +745,8 @@ func test_second_agent_completes_cooking_from_interrupted_step() -> void:
     job.advance_step()
     assert_true(job.is_all_steps_complete(), "All steps should be complete")
 
-    # Get initial hunger for second agent
-    var initial_hunger: float = npc2.motives.get_value(Motive.MotiveType.HUNGER)
-
-    # Apply motive effects
-    for motive_name in cook_simple_meal_recipe.motive_effects:
-        var effect: float = cook_simple_meal_recipe.motive_effects[motive_name]
-        if motive_name == "hunger":
-            npc2.motives.fulfill(Motive.MotiveType.HUNGER, effect)
-
-    var final_hunger: float = npc2.motives.get_value(Motive.MotiveType.HUNGER)
-    assert_true(final_hunger > initial_hunger, "Hunger should increase for second agent")
+    # Note: cook_simple_meal no longer has motive_effects (US-003)
+    # Hunger satisfaction now comes from eating the cooked meal, not cooking it
 
     job.complete()
     assert_eq(job.state, Job.JobState.COMPLETED, "Job should be COMPLETED")
@@ -855,11 +846,8 @@ func test_full_interruption_and_resume_sequence() -> void:
     assert_eq(job.current_step_index, 2, "Should be at step 2 (past last step)")
     assert_true(job.is_all_steps_complete(), "All steps complete")
 
-    # Apply motive effects
-    var initial_hunger: float = npc2.motives.get_value(Motive.MotiveType.HUNGER)
-    npc2.motives.fulfill(Motive.MotiveType.HUNGER, 50.0)
-    var final_hunger: float = npc2.motives.get_value(Motive.MotiveType.HUNGER)
-    assert_true(final_hunger > initial_hunger, "Hunger fulfilled for second agent")
+    # Note: cook_simple_meal no longer has motive_effects (US-003)
+    # Hunger satisfaction now comes from eating the cooked meal, not cooking it
 
     job.complete()
     assert_eq(job.state, Job.JobState.COMPLETED, "Job should be COMPLETED")
