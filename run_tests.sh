@@ -25,6 +25,7 @@ TESTS=(
     "test_debug_cooking_scenario"
     "test_debug_interruption_scenario"
     "test_ground_items"
+    "test_find_item_source"
 )
 
 total_passed=0

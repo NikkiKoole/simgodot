@@ -655,6 +655,79 @@ func _find_container_with_item(tag: String) -> ItemContainer:
 	print("[NPC ", npc_id, "] No container found with '", tag, "'")
 	return null
 
+## Find an item from any source (container, station output, or ground)
+## Returns Dictionary with 'type' and 'source' keys:
+##   type: 'container', 'station_output', 'ground', or 'none'
+##   source: ItemContainer, Station, ItemEntity (for ground), or null
+## Priority order: containers first, then station outputs, then ground items
+## Respects reservations (finds unreserved items or items reserved by this NPC)
+func _find_item_source(tag: String) -> Dictionary:
+	var result := {"type": "none", "source": null}
+
+	# 1. Check containers first (existing behavior)
+	for container in available_containers:
+		# Check for unreserved items
+		if container.has_available_item(tag):
+			return {"type": "container", "source": container}
+
+		# Also check for items reserved by us (for current job)
+		if current_job != null:
+			var all_items = container.get_all_items() if container.has_method("get_all_items") else []
+			for item in all_items:
+				if item.item_tag == tag and item.is_reserved() and item.reserved_by == self:
+					return {"type": "container", "source": container}
+
+	# 2. Check station output slots
+	for station in available_stations:
+		var output_items := station.get_available_output_items_by_tag(tag)
+		for item in output_items:
+			# get_available_output_items_by_tag already filters out reserved items
+			return {"type": "station_output", "source": station}
+
+		# Also check for items reserved by us in output slots
+		if current_job != null:
+			var all_output := station.get_all_output_items()
+			for item in all_output:
+				if item.item_tag == tag and item.is_reserved() and item.reserved_by == self:
+					return {"type": "station_output", "source": station}
+
+	# 3. Check ground items via Level
+	var level := _get_level()
+	if level != null and level.has_method("get_ground_items_by_tag"):
+		var ground_items: Array[ItemEntity] = level.get_ground_items_by_tag(tag)
+		if not ground_items.is_empty():
+			# Return the first available ground item
+			return {"type": "ground", "source": ground_items[0]}
+
+		# Also check for items reserved by us on the ground
+		if current_job != null and level.has_method("get_all_items"):
+			var all_items: Array[ItemEntity] = level.get_all_items()
+			for item in all_items:
+				if not is_instance_valid(item):
+					continue
+				if item.location != ItemEntity.ItemLocation.ON_GROUND:
+					continue
+				if item.item_tag != tag:
+					continue
+				if item.is_reserved() and item.reserved_by == self:
+					return {"type": "ground", "source": item}
+
+	return result
+
+## Get the Level node (current scene or parent)
+func _get_level() -> Node:
+	# Try to get Level from tree
+	var tree := get_tree()
+	if tree != null:
+		var current_scene := tree.current_scene
+		if current_scene != null and current_scene.has_method("get_ground_items_by_tag"):
+			return current_scene
+		# Also check if we're a direct child of a Level
+		var parent := get_parent()
+		if parent != null and parent.has_method("get_ground_items_by_tag"):
+			return parent
+	return null
+
 ## Find an item in a container that we can pick up
 ## Prefers items reserved by us, then unreserved items
 func _find_item_in_container(container: ItemContainer, tag: String) -> ItemEntity:
