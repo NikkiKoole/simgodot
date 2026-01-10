@@ -433,6 +433,23 @@ func get_all_items() -> Array[ItemEntity]:
 	return all_items
 
 
+## Get all ground items matching a specific tag that are not reserved
+## Returns only items with location == ON_GROUND, matching item_tag, and not reserved
+func get_ground_items_by_tag(tag: String) -> Array[ItemEntity]:
+	var result: Array[ItemEntity] = []
+	for item in all_items:
+		if not is_instance_valid(item):
+			continue
+		if item.location != ItemEntity.ItemLocation.ON_GROUND:
+			continue
+		if item.item_tag != tag:
+			continue
+		if item.is_reserved():
+			continue
+		result.append(item)
+	return result
+
+
 ## Get all NPCs
 func get_all_npcs() -> Array[Node]:
 	var valid_npcs: Array[Node] = []
