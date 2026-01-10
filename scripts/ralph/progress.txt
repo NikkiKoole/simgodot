@@ -123,3 +123,18 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - When station output item disappears before arrival, NPC re-searches for alternatives via _start_gathering_next_item()
   - Pattern: _follow_path_hauling checks targets in order: target_ground_item, target_station_output, then falls back to target_container
 ---
+
+## 2026-01-10 - US-008
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Modified JobBoard._spawn_outputs() to register ground items with Level.all_items
+- Files changed:
+  - scripts/job_board.gd: Modified _spawn_outputs() to find Level via tree traversal (or fallback to current_scene), register ground items in Level.all_items when no output slot is available
+  - scripts/tests/test_jobboard.gd: Added 3 new test cases for US-008 (14 assertions): test_spawn_outputs_registers_ground_items_with_level, test_spawn_outputs_ground_discoverable, test_spawn_outputs_station_slot_not_in_level
+- **Learnings for future iterations:**
+  - _spawn_outputs() finds Level by traversing up the tree from station, looking for a node with get_ground_items_by_tag() method
+  - Fallback to get_tree().current_scene if not found via tree traversal
+  - Use `"all_items" in level` to check for property existence (not has_method)
+  - Items placed in station output slots do NOT get registered with Level.all_items (they're found via Station.get_available_output_items_by_tag)
+  - Only ground items (when output slot is full) get registered with Level.all_items
+  - Tests use real Level (LevelScene.instantiate()) instead of mocks for more accurate testing
+---

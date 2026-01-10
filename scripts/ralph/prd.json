@@ -181,7 +181,7 @@
         "test_spawn_outputs_station_not_double_registered: Items in slots not duplicated in Level.all_items"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Without this, ground items spawned by recipes won't be found. Station slot items are found via Station query."
     },
     {
