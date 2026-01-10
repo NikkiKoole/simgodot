@@ -14,6 +14,13 @@
         "Item state is set based on tag (e.g., 'cooked' in tag sets COOKED state)",
         "Existing tests in test_jobboard.gd still pass"
       ],
+      "testCriteria": [
+        "test_spawn_outputs_places_in_output_slot: Item placed in station output slot when available",
+        "test_spawn_outputs_fallback_to_ground: Item placed at station.global_position when no slots available",
+        "test_spawn_outputs_sets_cooked_state: Item with 'cooked' in tag has COOKED state",
+        "test_spawn_outputs_sets_prepped_state: Item with 'prepped' in tag has PREPPED state",
+        "test_spawn_outputs_multiple_outputs: Multiple outputs spawn correct quantities"
+      ],
       "priority": 1,
       "passes": true,
       "notes": "This is in scripts/job_board.gd around line 315. Check that items are properly instantiated and added to scene."
@@ -32,6 +39,14 @@
         "_finish_job still sets current_job = null and current_state = State.IDLE",
         "Existing tests still pass"
       ],
+      "testCriteria": [
+        "test_finish_job_delegates_to_jobboard: _finish_job calls JobBoard.complete_job()",
+        "test_finish_job_clears_held_items: held_items array is empty after _finish_job",
+        "test_finish_job_releases_station: target_station.reserved_by is null after _finish_job",
+        "test_finish_job_clears_current_job: current_job is null after _finish_job",
+        "test_finish_job_sets_idle_state: current_state is State.IDLE after _finish_job",
+        "test_finish_job_motive_applied_via_jobboard: Motive effects applied through JobBoard, not NPC"
+      ],
       "priority": 2,
       "passes": false,
       "notes": "This is in scripts/npc.gd around line 1289. Remove the duplicated logic but keep local state cleanup."
@@ -45,6 +60,12 @@
         "The outputs array still contains cooked_meal",
         "Recipe still has all steps defined"
       ],
+      "testCriteria": [
+        "test_cook_simple_meal_no_motive_effects: recipe.motive_effects.is_empty() returns true",
+        "test_cook_simple_meal_has_output: recipe.get_outputs() contains cooked_meal",
+        "test_cook_simple_meal_has_steps: recipe.steps.size() > 0",
+        "test_cooking_does_not_satisfy_hunger: NPC hunger unchanged after completing cook job"
+      ],
       "priority": 3,
       "passes": false,
       "notes": "Simple resource file edit. The motive satisfaction moves to the consumption recipe."
@@ -57,6 +78,12 @@
         "resources/recipes/watch_tv.tres has tools = []",
         "Recipe still has all steps defined",
         "Recipe still has motive_effects for fun"
+      ],
+      "testCriteria": [
+        "test_watch_tv_no_tools: recipe.tools.is_empty() returns true",
+        "test_watch_tv_has_steps: recipe.steps.size() > 0",
+        "test_watch_tv_has_fun_motive: recipe.motive_effects.has('fun') returns true",
+        "test_watch_tv_can_start_without_tools: can_start_job succeeds without tool items"
       ],
       "priority": 4,
       "passes": false,
@@ -73,6 +100,15 @@
         "Recipe has outputs = [] (nothing produced)",
         "Recipe has motive_effects = {'hunger': 50.0}",
         "Recipe has recipe_name = 'Eat Snack'"
+      ],
+      "testCriteria": [
+        "test_eat_snack_exists: RecipeRegistry.get_recipe('eat_snack') returns valid recipe",
+        "test_eat_snack_requires_cooked_meal: recipe.get_inputs()[0].item_tag == 'cooked_meal'",
+        "test_eat_snack_consumes_input: recipe.get_inputs()[0].consumed == true",
+        "test_eat_snack_no_steps: recipe.steps.is_empty() returns true",
+        "test_eat_snack_no_outputs: recipe.get_outputs().is_empty() returns true",
+        "test_eat_snack_satisfies_hunger: recipe.motive_effects['hunger'] == 50.0",
+        "test_eating_consumes_meal_and_satisfies_hunger: Integration test - meal consumed, hunger increased"
       ],
       "priority": 5,
       "passes": false,

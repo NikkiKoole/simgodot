@@ -43,6 +43,8 @@ func run_tests() -> void:
 	test_complete_job_basic()
 	test_complete_job_motive_effects()
 	test_complete_job_spawns_outputs()
+	test_spawn_outputs_fallback_to_ground()
+	test_spawn_outputs_sets_prepped_state()
 	test_complete_job_consumes_inputs()
 	test_complete_job_preserves_tools()
 	test_complete_job_with_transforms()
@@ -1053,6 +1055,90 @@ func test_complete_job_spawns_outputs() -> void:
 	assert_eq(leftover_count, 2, "Should have 2 leftovers")
 
 	# Cleanup output items
+	for item in output_items:
+		item.queue_free()
+
+	agent.queue_free()
+	station.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_spawn_outputs_fallback_to_ground() -> void:
+	test("spawn_outputs falls back to ground when no output slots")
+	var board = _create_job_board()
+	var agent := _create_mock_agent()
+
+	# Create recipe with outputs
+	var recipe := _create_recipe_with_outputs("Cooking",
+		[{"tag": "cooked_meal", "quantity": 2}],
+		{}
+	)
+
+	# Create station with only 1 output slot (but we need 2 items)
+	var station := _create_station_with_slots("counter", 1)
+
+	var job: Job = board.post_job(recipe, 1)
+	board.claim_job(job, agent)
+	job.start()
+
+	# Complete with station
+	var completed: bool = board.complete_job(job, agent, station)
+	assert_true(completed, "Job should complete")
+
+	# First item should be in output slot
+	var output_items := station.get_all_output_items()
+	assert_array_size(output_items, 1, "Should have 1 item in output slot")
+
+	# Second item should be a child of station (on ground)
+	var ground_items: Array[ItemEntity] = []
+	for child in station.get_children():
+		if child is ItemEntity and not output_items.has(child):
+			ground_items.append(child)
+
+	assert_array_size(ground_items, 1, "Should have 1 item on ground")
+	assert_eq(ground_items[0].location, ItemEntity.ItemLocation.ON_GROUND, "Ground item should have ON_GROUND location")
+	assert_eq(ground_items[0].global_position, station.global_position, "Ground item should be at station position")
+
+	# Cleanup
+	for item in output_items:
+		item.queue_free()
+	for item in ground_items:
+		item.queue_free()
+
+	agent.queue_free()
+	station.queue_free()
+	_cleanup_job_board(board)
+
+
+func test_spawn_outputs_sets_prepped_state() -> void:
+	test("spawn_outputs sets PREPPED state for prepped items")
+	var board = _create_job_board()
+	var agent := _create_mock_agent()
+
+	# Create recipe with prepped output
+	var recipe := _create_recipe_with_outputs("Prepping",
+		[{"tag": "prepped_vegetables", "quantity": 1}],
+		{}
+	)
+
+	# Create station with output slot
+	var station := _create_station_with_slots("counter", 1)
+
+	var job: Job = board.post_job(recipe, 1)
+	board.claim_job(job, agent)
+	job.start()
+
+	# Complete with station
+	var completed: bool = board.complete_job(job, agent, station)
+	assert_true(completed, "Job should complete")
+
+	# Check output has PREPPED state
+	var output_items := station.get_all_output_items()
+	assert_array_size(output_items, 1, "Should have 1 output item")
+	assert_eq(output_items[0].item_tag, "prepped_vegetables", "Item should have correct tag")
+	assert_eq(output_items[0].state, ItemEntity.ItemState.PREPPED, "Item should have PREPPED state")
+
+	# Cleanup
 	for item in output_items:
 		item.queue_free()
 
